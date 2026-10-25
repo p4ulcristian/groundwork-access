@@ -11,7 +11,7 @@
   ;; a reference what it does on delete, update and when checked, an index as a map;
   ;; migrate! takes {:tables :extensions :functions :views}, a function a file or a made {:name :sql};
   ;; run-in-transaction! takes the caller's :log, where after-commit failures go
-  io.github.p4ulcristian/groundwork-postgres   {:git/tag "v0.4.8" :git/sha "322b4b1"}
+  io.github.p4ulcristian/groundwork-postgres   {:git/tag "v0.4.9" :git/sha "1cc359d"}
   ;; a handler's steps: the session step and the check are steps over groundwork-steps's
   ;; context; refuse, and the refusal's shape (the leak test is handed the app's runner)
   io.github.p4ulcristian/groundwork-steps {:git/tag "v0.1.0" :git/sha "ed9458e"}
@@ -29,7 +29,7 @@
   :test {:extra-paths ["test-code"]
          :extra-deps  {io.github.cognitect-labs/test-runner {:git/tag "v0.5.1" :git/sha "dfb30dd"}
                        ;; the tests' meter, one per pool, made as an app makes its own (groundwork-postgres brings the same)
-                       io.github.p4ulcristian/groundwork-metrics {:git/tag "v0.1.6" :git/sha "88ae7a3"}
+                       io.github.p4ulcristian/groundwork-metrics {:git/tag "v0.1.7" :git/sha "53c7099"}
                        ;; the tests' groundwork-shaped-json, made as an app makes its own; the tests' runner of a message reads and writes by it
                        io.github.p4ulcristian/groundwork-shaped-json {:git/tag "v0.2.2" :git/sha "1c0fcf9"}}
          :exec-fn     cognitect.test-runner.api/test

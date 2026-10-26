@@ -12,4 +12,4 @@ LEFT JOIN groundwork_access.membership_roles mr
       AND mr.membership_role__scope_id   = m.membership__scope_id
 LEFT JOIN groundwork_access.roles r ON r.role__id = mr.membership_role__role_id
 LEFT JOIN groundwork_access.role_actions ra ON ra.role_action__role_id = r.role__id
-WHERE m.membership__person_id = :membership/person-id
+WHERE m.membership__person_id = param('membership/person-id')

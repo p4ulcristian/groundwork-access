@@ -64,7 +64,7 @@
                 :steps [{:name :approve
                          :enter #(steps/add-answer-to-context
                                   % {:count (postgres/run-statement! (:groundwork-access/transaction %)
-                                                                   (query "UPDATE orders SET order__approved = true WHERE order__id = :order/id")
+                                                                   (query "UPDATE orders SET order__approved = true WHERE order__id = param('order/id')")
                                                                    (:groundwork-steps/message-data %))})}]}
    :qc/in-shop {:action :qc/approve :scope [:shop :shop/id]
                 :params-shape [:map [:shop/id :uuid]] :answer-shape [:map]

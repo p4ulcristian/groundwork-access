@@ -59,7 +59,7 @@
                          :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
 
 (def ^:private find-all-orders (postgres/make-query-from-sql-text "all orders, no WHERE" "SELECT order__id FROM orders ORDER BY order__id"))
-(def ^:private insert-order (postgres/make-query-from-sql-text "insert order" "INSERT INTO orders (order__shop_id) VALUES (:order/shop-id)"))
+(def ^:private insert-order (postgres/make-query-from-sql-text "insert order" "INSERT INTO orders (order__shop_id) VALUES (param('order/shop-id'))"))
 
 (def ^:private handlers
   {:orders/all   {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid]

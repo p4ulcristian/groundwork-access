@@ -87,7 +87,7 @@
                                              {:type :groundwork-access/unknown-table :table table-key})))
                      name  (postgres/turn-table-key-into-table-name table-key)
                      id    (sentences/column-name (first pk))
-                     where (str " WHERE " id " = :leak/id")]
+                     where (str " WHERE " id " = param('leak/id')")]
                row-id ids
                :let [reached (set (for [[operation text] [[:read (str "SELECT 1 AS leak__found FROM " name where)]
                                                           [:update (str "UPDATE " name " SET " id " = " id where)]

@@ -2,7 +2,7 @@
 -- a member of each, and each role they hold there with its actions (none
 -- listed for Owner).
 WITH RECURSIVE up (kind, id, depth) AS (
-  SELECT CAST(:scope/kind AS text), CAST(:scope/id AS uuid), 0
+  SELECT CAST(param('scope/kind') AS text), CAST(param('scope/id') AS uuid), 0
   UNION
   SELECT s.scope__parent_kind, s.scope__parent_id, u.depth + 1
   FROM groundwork_access.scopes s JOIN up u ON s.scope__kind = u.kind AND s.scope__id = u.id
@@ -13,7 +13,7 @@ SELECT u.kind AS scope__kind, u.id AS scope__id, u.depth AS scope__depth,
        r.role__id AS role__id, r.role__name AS role__name, ra.role_action__action AS role_action__action
 FROM up u
 LEFT JOIN groundwork_access.memberships m ON m.membership__scope_kind = u.kind AND m.membership__scope_id = u.id
-                               AND m.membership__person_id = :membership/person-id
+                               AND m.membership__person_id = param('membership/person-id')
 LEFT JOIN groundwork_access.membership_roles mr
        ON mr.membership_role__person_id  = m.membership__person_id
       AND mr.membership_role__scope_kind = m.membership__scope_kind

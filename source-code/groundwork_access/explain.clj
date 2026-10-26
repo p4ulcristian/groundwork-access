@@ -26,7 +26,7 @@
   (let [pk (first (sentences/find-primary-key-columns table))]
     (ask-one transaction (str "the row of " (:table table))
              (str "SELECT * FROM " (postgres/turn-table-key-into-table-name (:table table))
-                  " WHERE " (sentences/column-name pk) " = :explain/id")
+                  " WHERE " (sentences/column-name pk) " = param('explain/id')")
              {:explain/id id})))
 
 (defn- does-sql-hold? [transaction table id sql]
@@ -34,7 +34,7 @@
     (boolean (:explain/holds (ask-one transaction "whether a part holds"
                                       (str "SELECT (" sql ") IS TRUE AS explain__holds FROM "
                                            (postgres/turn-table-key-into-table-name (:table table))
-                                           " WHERE " (sentences/column-name pk) " = :explain/id")
+                                           " WHERE " (sentences/column-name pk) " = param('explain/id')")
                                       {:explain/id id})))))
 
 (defn- find-row-scopes

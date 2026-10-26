@@ -150,7 +150,7 @@
    may see it at all: one may see an order and not change it."
   [{:keys [tables conditions]} {:keys [action] [table-key] :record}]
   (let [row (str "SELECT 1 FROM " (postgres/turn-table-key-into-table-name table-key)
-                 " WHERE " (find-primary-key-column tables table-key) " = :record/id")]
+                 " WHERE " (find-primary-key-column tables table-key) " = param('record/id')")]
     (postgres/make-query-from-sql-text
      (str "may " action " on " table-key)
      (str "SELECT EXISTS (" row " AND (" (get-in conditions [table-key :actions action]) ")) AS allowed, "
@@ -178,7 +178,7 @@
                  (str "the scopes of a row of " table-key)
                  (str "SELECT " (str/join ", " (map (comp sentences/column-name first) columns))
                       " FROM " (postgres/turn-table-key-into-table-name table-key)
-                      " WHERE " (find-primary-key-column tables table-key) " = :record/id"))})))
+                      " WHERE " (find-primary-key-column tables table-key) " = param('record/id')"))})))
 
 (defn find-flag-deny
   "The deny a session's flags say no to an action with, or nil."
@@ -198,7 +198,7 @@
                                         transaction
                                         (postgres/make-query-from-sql-text
                                          "whether a scope is in a denied state"
-                                         (str "SELECT CAST(:scope/id AS uuid) IN (SELECT * FROM "
+                                         (str "SELECT CAST(param('scope/id') AS uuid) IN (SELECT * FROM "
                                               (conditions/find-denied-function-name deny) "()) AS scope__denied"))
                                         {:scope/id scope-id}))))
                  (scope-kinds/find-denies scope-kinds))))

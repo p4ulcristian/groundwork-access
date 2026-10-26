@@ -5,7 +5,7 @@ WITH RECURSIVE below (kind, id, top_kind, top_id) AS (
   FROM groundwork_access.memberships m
   JOIN groundwork_access.scopes s ON s.scope__parent_kind = m.membership__scope_kind
                        AND s.scope__parent_id   = m.membership__scope_id
-  WHERE m.membership__person_id = :membership/person-id
+  WHERE m.membership__person_id = param('membership/person-id')
   UNION
   SELECT s.scope__kind, s.scope__id, b.top_kind, b.top_id
   FROM groundwork_access.scopes s

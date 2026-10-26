@@ -88,7 +88,7 @@
    :parts/price    {:action :parts/edit :record [:parts :part/id]
                     :params-shape [:map [:part/id :uuid]] :answer-shape [:map [:count :int]]
                     :refusals {} :rate-limit nil :run-steps-in nil
-                    :steps [(answer-with (fn [t data] {:count (postgres/run-statement! t (query "UPDATE parts SET part__pricing = 5 WHERE part__id = :part/id") data)}))]}})
+                    :steps [(answer-with (fn [t data] {:count (postgres/run-statement! t (query "UPDATE parts SET part__pricing = 5 WHERE part__id = param('part/id')") data)}))]}})
 
 (defn- run-sql! [pool text] (postgres/run-statement! pool (query text) {}))
 

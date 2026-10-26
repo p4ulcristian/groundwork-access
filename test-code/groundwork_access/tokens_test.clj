@@ -57,7 +57,7 @@
 
 (defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-steps/message-data %)))})
 
-(def ^:private insert-order (query "INSERT INTO orders (order__shop_id) VALUES (:order/shop-id)"))
+(def ^:private insert-order (query "INSERT INTO orders (order__shop_id) VALUES (param('order/shop-id'))"))
 
 (def ^:private handlers
   {:orders/place    {:action :orders/edit :scope [:shop :order/shop-id]

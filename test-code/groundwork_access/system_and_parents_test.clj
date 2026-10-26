@@ -218,7 +218,7 @@
 ;; Against Postgres
 
 (def ^:private mark-bounced
-  (postgres/make-query-from-sql-text "a bounce" "UPDATE shop_emails SET shop_email__bounced = true WHERE shop_email__address = :address"))
+  (postgres/make-query-from-sql-text "a bounce" "UPDATE shop_emails SET shop_email__bounced = true WHERE shop_email__address = param('address')"))
 
 (deftest a-named-system-actor-gets-exactly-what-its-sentences-say
   (if-not port

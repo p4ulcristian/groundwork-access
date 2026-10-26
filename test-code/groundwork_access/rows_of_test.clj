@@ -86,7 +86,7 @@
 
 (def ^:private insert-move
   (query (str "INSERT INTO moves (move__shop_id, move__batch_id, move__workstation_id) "
-              "SELECT batch__shop_id, batch__id, :move/workstation-id FROM batches WHERE batch__id = :move/batch-id")))
+              "SELECT batch__shop_id, batch__id, param('move/workstation-id') FROM batches WHERE batch__id = param('move/batch-id')")))
 
 (defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-steps/message-data %)))})
 

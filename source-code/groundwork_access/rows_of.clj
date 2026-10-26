@@ -145,7 +145,7 @@
           [table (postgres/make-query-from-sql-text
                   (str "whether " action " reads a row of " table)
                   (str "SELECT EXISTS (SELECT 1 FROM " (postgres/turn-table-key-into-table-name table)
-                       " WHERE " pk " = :row/id AND (" (get reads table) ")) AS row__readable"))])))
+                       " WHERE " pk " = param('row/id') AND (" (get reads table) ")) AS row__readable"))])))
 
 (defn find-readable
   "The marked ids, each with whether it is readable now:

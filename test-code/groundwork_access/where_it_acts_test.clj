@@ -110,14 +110,14 @@
 
 (defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f (:groundwork-access/transaction %) (:groundwork-steps/message-data %)))})
 
-(def ^:private insert-machine (query "INSERT INTO machines (machine__shop_id) VALUES (:machine/shop-id)"))
+(def ^:private insert-machine (query "INSERT INTO machines (machine__shop_id) VALUES (param('machine/shop-id'))"))
 
 (def ^:private bob-does
-  {"insert-ledger"      #(postgres/run-statement! %1 (query "INSERT INTO ledger_entries (ledger_entry__shop_id, ledger_entry__order_id, ledger_entry__amount) VALUES (:target/shop-id, :order/id, 5)") %2)
-   "update-ledger"      #(postgres/run-statement! %1 (query "UPDATE ledger_entries SET ledger_entry__amount = ledger_entry__amount + 1 WHERE ledger_entry__order_id = :order/id") %2)
-   "delete-ledger"      #(postgres/run-statement! %1 (query "DELETE FROM ledger_entries WHERE ledger_entry__order_id = :order/id") %2)
-   "read-workstations"  #(count (postgres/find-rows %1 (query "SELECT workstation__id FROM workstations") %2))
-   "update-workstation" #(postgres/run-statement! %1 (query "UPDATE workstations SET workstation__name = 'moved'") %2)})
+  {"insert-ledger"      #(postgres/run-statement! %1 (query "INSERT INTO ledger_entries (ledger_entry__shop_id, ledger_entry__order_id, ledger_entry__amount) VALUES (param('target/shop-id'), param('order/id'), 5)") %2)
+   "update-ledger"      #(postgres/run-statement! %1 (query "UPDATE ledger_entries SET ledger_entry__amount = ledger_entry__amount + 1 WHERE ledger_entry__order_id = param('order/id')") (select-keys %2 [:order/id]))
+   "delete-ledger"      #(postgres/run-statement! %1 (query "DELETE FROM ledger_entries WHERE ledger_entry__order_id = param('order/id')") (select-keys %2 [:order/id]))
+   "read-workstations"  (fn [t _] (count (postgres/find-rows t (query "SELECT workstation__id FROM workstations") {})))
+   "update-workstation" (fn [t _] (postgres/run-statement! t (query "UPDATE workstations SET workstation__name = 'moved'") {}))})
 
 (def ^:private handlers
   {:machines/create   {:action :machines/edit :scope [:shop :machine/shop-id]
@@ -128,7 +128,7 @@
    :machines/misplace {:action :machines/edit :scope [:shop :shop/id]
                        :params-shape [:map [:shop/id :uuid] [:machine/shop-id :uuid]] :answer-shape [:map]
                        :refusals {} :rate-limit nil :run-steps-in nil
-                       :steps [(answer-with (fn [t data] (postgres/run-statement! t insert-machine data) {}))]}
+                       :steps [(answer-with (fn [t data] (postgres/run-statement! t insert-machine (select-keys data [:machine/shop-id])) {}))]}
    :machines/mine     {:action :machines/edit :scope :every-scope-holding-the-action
                        :params-shape [:map] :answer-shape [:vector :uuid]
                        :refusals {} :rate-limit nil :run-steps-in nil
@@ -136,7 +136,7 @@
    :shops/rename      {:action :shops/edit :scope [:shop :shop/id]
                        :params-shape [:map [:shop/id :uuid]] :answer-shape [:map [:count :int]]
                        :refusals {} :rate-limit nil :run-steps-in nil
-                       :steps [(answer-with (fn [t data] {:count (postgres/run-statement! t (query "UPDATE shops SET shop__name = 'renamed'") data)}))]}
+                       :steps [(answer-with (fn [t data] {:count (postgres/run-statement! t (query "UPDATE shops SET shop__name = 'renamed'") {})}))]}
    :shops/one         {:action :shops/edit :record [:shops :shop/id]
                        :params-shape [:map [:shop/id :uuid]] :answer-shape [:map [:shop/id :uuid]]
                        :refusals {} :rate-limit nil :run-steps-in nil
@@ -152,7 +152,7 @@
    :shops/lift        {:action :shops/lift :record [:shops :shop/id]
                        :params-shape [:map [:shop/id :uuid]] :answer-shape [:map [:count :int]]
                        :refusals {} :rate-limit nil :run-steps-in nil
-                       :steps [(answer-with (fn [t data] {:count (postgres/run-statement! t (query "UPDATE shops SET shop__status = 'open' WHERE shop__id = :shop/id") data)}))]}
+                       :steps [(answer-with (fn [t data] {:count (postgres/run-statement! t (query "UPDATE shops SET shop__status = 'open' WHERE shop__id = param('shop/id')") data)}))]}
    :orders/work       {:action :orders/edit :record [:orders :order/id]
                        :params-shape [:map [:order/id :uuid] [:target/shop-id :uuid] [:work (into [:enum] (sort (keys bob-does)))]]
                        :answer-shape [:map [:count :int]]

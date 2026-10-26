@@ -50,8 +50,8 @@
         p (postgres/turn-key-into-column-name moves-to)]
     (postgres/make-query-from-sql-text
      (str "move a visitor's rows of " table " to the person")
-     (str "UPDATE " (postgres/turn-table-key-into-table-name table) " SET " p " = :move/person-id, " v " = NULL"
-          " WHERE " v " = :move/visitor-id"))))
+     (str "UPDATE " (postgres/turn-table-key-into-table-name table) " SET " p " = param('move/person-id'), " v " = NULL"
+          " WHERE " v " = param('move/visitor-id')"))))
 
 (defn- move-visitor-rows!
   "In every table with a :visitor column that :moves-to a person column:

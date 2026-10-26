@@ -145,8 +145,8 @@
 ;; Handlers
 
 (def ^:private find-all-orders (postgres/make-query-from-sql-text "all orders, no WHERE" "SELECT order__id FROM orders ORDER BY order__id"))
-(def ^:private update-status (postgres/make-query-from-sql-text "an order's status" "UPDATE orders SET order__status = 'seen' WHERE order__id = :order/id"))
-(def ^:private insert-order (postgres/make-query-from-sql-text "a new order" "INSERT INTO orders (order__shop_id, order__status) VALUES (:order/shop-id, 'new')"))
+(def ^:private update-status (postgres/make-query-from-sql-text "an order's status" "UPDATE orders SET order__status = 'seen' WHERE order__id = param('order/id')"))
+(def ^:private insert-order (postgres/make-query-from-sql-text "a new order" "INSERT INTO orders (order__shop_id, order__status) VALUES (param('order/shop-id'), 'new')"))
 
 (defn- answer-with [f] {:name :answer :enter #(steps/add-answer-to-context % (f %))})
 

@@ -11,7 +11,7 @@
   ;; a reference what it does on delete, update and when checked, an index as a map;
   ;; migrate! takes {:tables :extensions :functions :views}, a function a file or a made {:name :sql};
   ;; run-in-transaction! takes the caller's :log, where after-commit failures go
-  io.github.p4ulcristian/groundwork-postgres   {:git/tag "v0.4.9" :git/sha "1cc359d"}
+  io.github.p4ulcristian/groundwork-postgres   {:git/tag "v0.4.10" :git/sha "0956bdc"}
   ;; a handler's steps: the session step and the check are steps over groundwork-steps's
   ;; context; refuse, and the refusal's shape (the leak test is handed the app's runner)
   io.github.p4ulcristian/groundwork-steps {:git/tag "v0.1.0" :git/sha "ed9458e"}

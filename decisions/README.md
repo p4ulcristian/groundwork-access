@@ -17,7 +17,8 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [The session is looked up in the question's own transaction](2026-10-27-the-session-is-looked-up-in-the-questions-own-transaction.md) (v0.8.0)
 - [sign-in! takes the session's lifetime](2026-10-27-sign-in-takes-the-sessions-lifetime.md) (v0.8.0)
 - [A handler sees which token asked](2026-10-27-a-handler-sees-which-token-asked.md) (v0.8.0)
-- [groundwork-access trusts outside issuers the app names](2026-10-27-groundwork-access-trusts-outside-issuers-the-app-names.md) (v0.8.0)
+- [groundwork-access trusts outside issuers the app names](2026-10-27-groundwork-access-trusts-outside-issuers-the-app-names.md) (v0.8.0), changed in part by [An outside issuer's token is checked by nimbus-jose-jwt](2026-10-27-an-outside-issuers-token-is-checked-by-nimbus-jose-jwt.md)
+- [An outside issuer's token is checked by nimbus-jose-jwt; the policy stays groundwork-access's](2026-10-27-an-outside-issuers-token-is-checked-by-nimbus-jose-jwt.md) (v0.8.1)
 
 ## What may they do
 

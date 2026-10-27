@@ -29,7 +29,8 @@ Needs [groundwork-postgres](https://github.com/p4ulcristian/groundwork-postgres)
 maps, their gates), [groundwork-steps](https://github.com/p4ulcristian/groundwork-steps) (a
 handler's steps, their context's keys, the refusal's shape), [groundwork-logs](https://github.com/p4ulcristian/groundwork-logs) (the
 message's log), malli with test.check (the settings checked, the leak
-test's params) and jsonista. One public namespace, `groundwork-access.api`; its parts
+test's params), jsonista, and nimbus-jose-jwt (an outside issuer's
+token read, its keys fetched, kept and matched, its signature checked). One public namespace, `groundwork-access.api`; its parts
 are `groundwork-access.*`. One more namespace is a REPL's only, never an app's code:
 `groundwork-access.repl`'s `make-step-asking-as`, a step in place of the find-session
 step that asks as a named asker (a composer's "ask as this person" tool). groundwork-access
@@ -295,6 +296,10 @@ must be `:issuer`), its signature, `exp` and `nbf` (with
 `:keys-kept-seconds`, fetched again for an unknown `kid`, and fetched at
 most every `:fetch-at-most-every-seconds`; never through a redirect.
 [Why](decisions/2026-10-27-groundwork-access-trusts-outside-issuers-the-app-names.md).
+The token is read, the keys fetched, kept and matched, and the signature
+checked by nimbus-jose-jwt; the order, the named problems and the policy
+are groundwork-access's
+([why](decisions/2026-10-27-an-outside-issuers-token-is-checked-by-nimbus-jose-jwt.md)).
 
 ## Tests
 

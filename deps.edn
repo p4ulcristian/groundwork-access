@@ -21,8 +21,11 @@
   ;; made by malli's generator, which needs test.check
   metosin/malli                  {:mvn/version "0.20.3"}
   org.clojure/test.check         {:mvn/version "1.1.3"}
-  ;; who is asking, written as JSON for Postgres
-  metosin/jsonista               {:mvn/version "1.0.2"}}
+  ;; who is asking, written as JSON for Postgres; an outside issuer's discovery document read
+  metosin/jsonista               {:mvn/version "1.0.2"}
+  ;; an outside issuer's token: the JWT read, its JWK set fetched (by the JDK's HttpClient) and
+  ;; cached, its key matched, its RSA or ECDSA signature checked; no dependencies of its own
+  com.nimbusds/nimbus-jose-jwt   {:mvn/version "10.10"}}
 
  :aliases
  {;; the tests:  clojure -X:test  (the Postgres ones need ACCESS_TEST_PORT, see README.md)

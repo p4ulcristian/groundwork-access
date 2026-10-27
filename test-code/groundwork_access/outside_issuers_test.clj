@@ -52,8 +52,9 @@
                 padded)
               bytes))))
 
-(defn- make-rsa-pair []
-  (.generateKeyPair (doto (KeyPairGenerator/getInstance "RSA") (.initialize 2048))))
+(defn- make-rsa-pair
+  ([] (make-rsa-pair 2048))
+  ([bits] (.generateKeyPair (doto (KeyPairGenerator/getInstance "RSA") (.initialize (int bits))))))
 
 (defn- make-ec-pair []
   (.generateKeyPair (doto (KeyPairGenerator/getInstance "EC") (.initialize (ECGenParameterSpec. "secp256r1")))))
@@ -69,7 +70,8 @@
 (defn- start-issuer!
   "The stand-in issuer on 127.0.0.1: /.well-known/openid-configuration
    (its issuer, its jwks_uri), /jwks (the keys in jwks, an atom), and
-   /lying-discovery, which names another issuer. Counts every fetch."
+   /lying-discovery, which names another issuer, and /moved-jwks, which
+   answers 302 to /jwks. Counts every fetch."
   [jwks]
   (let [server  (HttpServer/create (InetSocketAddress. "127.0.0.1" 0) 0)
         base    (str "http://127.0.0.1:" (.getPort (.getAddress server)))
@@ -86,11 +88,22 @@
     (answer! "/.well-known/openid-configuration" (fn [] {"issuer" base "jwks_uri" (str base "/jwks")}))
     (answer! "/lying-discovery" (fn [] {"issuer" "https://someone-else.test" "jwks_uri" (str base "/jwks")}))
     (answer! "/jwks" (fn [] {"keys" @jwks}))
+    (.createContext server "/moved-jwks"
+                    (reify HttpHandler
+                      (handle [_ exchange]
+                        (swap! fetches update "/moved-jwks" (fnil inc 0))
+                        (.add (.getResponseHeaders ^HttpExchange exchange) "location" (str base "/jwks"))
+                        (.sendResponseHeaders ^HttpExchange exchange 302 -1)
+                        (.close ^HttpExchange exchange))))
     (.start server)
     {:server server :base base :fetches fetches}))
 
-(defn- sign [alg private-key ^String input]
-  (let [signer (Signature/getInstance (case alg "RS256" "SHA256withRSA" "RS384" "SHA384withRSA" "ES256" "SHA256withECDSAinP1363Format"))]
+(defn- sign
+  "The signature of input by alg; :der-es256 is ES256's in the DER format
+   Java writes by default, not the r and s side by side a JWT carries."
+  [alg private-key ^String input]
+  (let [signer (Signature/getInstance (case alg "RS256" "SHA256withRSA" "RS384" "SHA384withRSA" "ES256" "SHA256withECDSAinP1363Format"
+                                            :der-es256 "SHA256withECDSA"))]
     (.initSign signer private-key)
     (.update signer (.getBytes input "US-ASCII"))
     (.sign signer)))
@@ -321,24 +334,47 @@
                              (.init (SecretKeySpec. (.getEncoded (.getPublic rsa)) "HmacSHA256")))
                   forged   (str input "." (encode (.doFinal mac (.getBytes input "US-ASCII"))))]
               (is (= :algorithm-not-allowed (problem-of unsigned)))
-              (is (= :algorithm-not-allowed (problem-of forged)))))
+              (is (= :algorithm-not-allowed (problem-of forged)))
+              (is (= :algorithm-not-allowed (problem-of (str (encode-json {"alg" "none" "kid" "rsa-1"}) "." (encode-json claims) "." (encode (byte-array 0)))))
+                  "none, its signature part empty")))
+
+          (testing "an ECDSA signature in the wrong format, or of zeros: a bad signature"
+            (let [input (str (encode-json {"alg" "ES256" "typ" "JWT" "kid" "ec-1"}) "." (encode-json claims))]
+              (is (= :bad-signature (problem-of (str input "." (encode (sign :der-es256 (.getPrivate ec) input)))))
+                  "DER, as Java signs by default, not r and s side by side")
+              (is (= :bad-signature (problem-of (str input "." (encode (byte-array 64)))))
+                  "r and s both zero (CVE-2022-21449)")))
+
+          (testing "keys that don't fit their alg: small RSA, for encryption, or saying another alg"
+            (let [small (make-rsa-pair 1024)
+                  enc   (make-rsa-pair)
+                  other (make-rsa-pair)]
+              (Thread/sleep 1100)
+              (swap! jwks into [(turn-into-jwk "rsa-small" small)
+                                (assoc (turn-into-jwk "rsa-enc" enc) "use" "enc")
+                                (assoc (turn-into-jwk "rsa-384" other) "alg" "RS384")])
+              (is (= :key-does-not-fit (problem-of (make-token "RS256" small {"kid" "rsa-small"} claims))) "1024 bits: under 2048")
+              (is (= :key-does-not-fit (problem-of (make-token "RS256" enc {"kid" "rsa-enc"} claims))) "use enc")
+              (is (= :key-does-not-fit (problem-of (make-token "RS256" other {"kid" "rsa-384"} claims))) "its own alg RS384")))
 
           (testing "a kid the kept keys lack: fetched again, at most every :fetch-at-most-every-seconds"
             (let [rotated (make-token "RS256" later-rsa {"kid" "rsa-2"} claims)]
               (Thread/sleep 1100)
               (is (= :unknown-key (problem-of rotated)) "fetched again: the issuer doesn't have it yet")
-              (is (= 2 (get @fetches "/jwks")))
+              (is (= 3 (get @fetches "/jwks")))
               (swap! jwks conj (turn-into-jwk "rsa-2" later-rsa))
               (is (= :unknown-key (problem-of rotated)) "within the second: not fetched again")
-              (is (= 2 (get @fetches "/jwks")))
+              (is (= :unknown-key (problem-of rotated)) "nor a third time: one fetch a period, not nimbus's two")
+              (is (= 3 (get @fetches "/jwks")))
               (Thread/sleep 1100)
               (is (= [anna nil #{} nil :stand-in] (asker-of rotated)) "the issuer's new key, fetched")
-              (is (= 3 (get @fetches "/jwks")))
+              (is (= 4 (get @fetches "/jwks")))
               (is (= [anna nil #{} nil :stand-in] (asker-of good)) "the old one still in its document")))
 
           (testing "keys that can't be fetched: refused, named"
             (let [lying    (access/make-find-session-step app-pool (make-settings [(assoc issuer :keys-at [:discovery (str base "/lying-discovery")])]))
                   gone     (access/make-find-session-step app-pool (make-settings [(assoc issuer :keys-at [:jwks "http://127.0.0.1:1/jwks"])]))
+                  moved    (access/make-find-session-step app-pool (make-settings [(assoc issuer :keys-at [:jwks (str base "/moved-jwks")])]))
                   problem  (fn [step]
                              (reset! test-log/lines [])
                              (postgres/run-in-transaction! app-pool {:read-only? false :log nil}
@@ -346,7 +382,11 @@
                                                                                                     :groundwork-access/transaction %}))
                              (get-in (first (test-log/find-lines "groundwork-access/request-refused")) ["data" "problem"]))]
               (is (= "keys-unavailable" (problem lying)) "a discovery document naming another issuer")
-              (is (= "keys-unavailable" (problem gone)) "nothing listening")))
+              (is (= "keys-unavailable" (problem gone)) "nothing listening")
+              (let [jwks-fetches (get @fetches "/jwks")]
+                (is (= "keys-unavailable" (problem moved)) "a redirect, never followed")
+                (is (= 1 (get @fetches "/moved-jwks")))
+                (is (= jwks-fetches (get @fetches "/jwks")) "/jwks not asked through it"))))
 
           (testing "a cookie and an outside token at once: refused, as with a token of groundwork-access's"
             (is (= (refusal :groundwork-access/not-allowed)

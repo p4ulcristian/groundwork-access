@@ -1,5 +1,7 @@
 # groundwork-access trusts outside issuers the app names
 
+> **Changed in part** by [An outside issuer's token is checked by nimbus-jose-jwt; the policy stays groundwork-access's](2026-10-27-an-outside-issuers-token-is-checked-by-nimbus-jose-jwt.md) (2026-10-27, v0.8.1): the JWT is read, its keys fetched, kept and matched, and its signature checked by nimbus-jose-jwt; the checks' order, their named problems and the policy stay as below.
+
 > The user's decision, 2026-10-27 (the switch, decision 7: groundwork-access trusts an outside issuer the app names, WorkOS AuthKit for Iron Rainbow's `/mcp`: its keys, issuer, audience; the subject is linked to a person, who then asks like anyone). Since v0.8.0. Changes in part [The session is the only truth](2026-10-12-the-session-is-the-only-truth.md) and [doorman owns a person's tokens](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) (its "not decided here: `/mcp`'s WorkOS OAuth tokens").
 
 **Decision:** the settings name outside issuers, `:outside-issuers`, required, `[]` for none; each writes out every key:

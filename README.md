@@ -7,7 +7,11 @@ own login proves who someone is and calls `sign-in!`, the one door that
 names a person; signing out deletes rows, so access ends at once on every
 server. A signed-in person makes tokens for themselves, for a script or an
 AI acting as them: a call with `Authorization: Bearer <token>` is theirs,
-with the same actions, scopes and gates. A visitor (not signed in)
+with the same actions, scopes and gates. An outside issuer the app names
+in its settings (WorkOS AuthKit, for an app's `/mcp`) signs bearer tokens
+too: groundwork-access checks each by the issuer's keys, issuer, audience, times
+and algorithm, and its subject is the person whose sign-in linked it,
+who then asks like anyone. A visitor (not signed in)
 gets a session of their own when the app first keeps something for them;
 their rows become the person's at sign-in. **What may they do:** the
 app's kinds of scope (a shop under a company, a back office of one scope)
@@ -42,14 +46,14 @@ step's lines say who asked
 | half | name | does |
 |---|---|---|
 | who | `settings-shape` | the settings as a malli shape, every key required |
-| who | `sessions-table` `tokens-table` | its tables, `groundwork-access.sessions` and `groundwork-access.tokens`, as maps for groundwork-postgres |
-| who | `sign-in!` `sign-out!` `sign-out-everywhere!` | a session made for a proven person, with its flags (the Set-Cookie text back), a visitor's rows moved to them and the request's old session ended, in one transaction; ended at once; everywhere: every session and token of the person |
+| who | `sessions-table` `tokens-table` `outside-subjects-table` | its tables, `groundwork_access.sessions`, `groundwork_access.tokens` and `groundwork_access.outside_subjects` (which person each subject at an outside issuer is), as maps for groundwork-postgres |
+| who | `sign-in!` `sign-out!` `sign-out-everywhere!` | a session made for a proven person, with its flags and its lifetime (`:session-lasts`: `:session-days`, pushed out when seen again, or `{:minutes 60}` from now, never pushed out; [why](decisions/2026-10-27-sign-in-takes-the-sessions-lifetime.md)), the person's subject at each outside issuer linked (`:outside-subjects`), the Set-Cookie text back, a visitor's rows moved to them and the request's old session ended, in one transaction; ended at once; everywhere: every session, token and outside subject of the person |
 | who | `make-token!` `list-tokens` `revoke-token!` | a token for the request's signed-in person (a session without flags; not a token): its text shown once, only its SHA-256 kept, a name and an end date required; their live tokens listed (never the text); one ended at once ([why](decisions/2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md)) |
 | who | `delete-ended-tokens!` | forgets ended tokens; for a nightly background job |
 | who | `start-visitor-session!` | a session for a visitor, on the app's own route: its id, which the rows kept for them name, and the Set-Cookie text |
 | who | `delete-ended-sessions!` | forgets ended sessions; for a nightly background job |
-| who | `make-find-session-step` | the step first in a handler: who asks, by a bearer token (no Origin check; no session flags) or the session cookie (the Origin checked), both refused; `:groundwork-access/person-id`, `:groundwork-access/visitor-id` and `:groundwork-access/session-flags` in the context, the person (and token) or visitor in `:groundwork-bridge/log` |
-| who | `run-as-asker-of-request!` | `(f transaction)` as the asker groundwork-access finds in a request, by the step's rules, outside a message (the app's own route, a page): held by the gates as a message's steps are |
+| who | `make-find-session-step` | the step first in a handler: who asks, by a bearer token (no Origin check; no session flags), an outside issuer's token (checked by its keys; a failed check `:groundwork-access/token-refused`) or the session cookie (the Origin checked), a cookie and a token at once refused; `:groundwork-access/person-id`, `:groundwork-access/visitor-id`, `:groundwork-access/session-flags`, `:groundwork-access/token-id` and `:groundwork-access/outside-issuer` in the context ([why](decisions/2026-10-27-a-handler-sees-which-token-asked.md)), the person (and token or issuer) or visitor in `:groundwork-steps/log`; in a handler, looked up in the question's own transaction, its first statement ([why](decisions/2026-10-27-the-session-is-looked-up-in-the-questions-own-transaction.md)) |
+| who | `run-as-asker-of-request!` | `(f transaction)` as the asker groundwork-access finds in a request, by the step's rules, outside a message (the app's own route, a page), looked up in that transaction: held by the gates as a message's steps are |
 | who | `find-session-key-of-request` | a hash of the request's token, else its session cookie, for rate limits |
 | what | `access-tables` | its tables, `groundwork_access.scopes` `groundwork_access.roles` `groundwork_access.role_actions` `groundwork-access.memberships` `groundwork_access.membership_roles` |
 | what | `access-move-from-v0-7` | a database of v0.7 (a role was its name, a member held one) brought to `access-tables` with its rows, by two `postgres/migrate!` runs: `:old-tables` and `:renames`, then `:copy-and-drops` ([why](decisions/2026-10-23-roles-have-ids-and-a-member-holds-a-set-of-roles.md)) |
@@ -64,7 +68,7 @@ step's lines say who asked
 | what | `put-access-into-handlers` | every handler says where it acts (`:record`, or `:scope` `[kind param]`, `:every-scope-holding-the-action`, `:no-scope`); the check in front of its steps, which run in a transaction where Postgres hears only the handler's action, in those scopes ([why](decisions/2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md)); a param marked `[:uuid {:groundwork-access/row-of :workstations}]` must be a row the action reads there, else `:groundwork-access/not-found`, before any step ([why](decisions/2026-10-23-a-param-may-say-it-is-a-row-of-a-table.md)) |
 | what | `put-gates-on-tables` | the table maps with their gates, `:gates nil` on the ungated ones, and a record under a record (`:parent`) given its link to the parent and the fill of its carried columns, for groundwork-postgres |
 | what | `find-leaks` | the leak test, for the app's own tests, each message answered by the app's runner (`:answer-message`, `(fn [handlers request message])`, groundwork-bridge's `answer-message` in groundwork); a record or scope it must not reach must be refused `:groundwork-access/not-found` (`:groundwork-access/signed-out` for an asker nobody signed in); a `:scope [kind param]` handler asked in each foreign scope (`:scope-kinds`) |
-| what | `refusals` (both sides; the browser's half has `put-refusals-into-shapes` too) | groundwork-access's reasons, `:groundwork-access/signed-out` `:groundwork-access/not-found` `:groundwork-access/not-allowed`, added to every handler it wraps |
+| what | `refusals` (both sides; the browser's half has `put-refusals-into-shapes` too) | groundwork-access's reasons, `:groundwork-access/signed-out` `:groundwork-access/not-found` `:groundwork-access/not-allowed` `:groundwork-access/token-refused`, added to every handler it wraps |
 | what | `run-as-system!` | `(f transaction)` as a named system actor (a webhook's function): the rows the sentences give it by `[:system name]`, the open ones and the ungated tables, nothing else; the app's own role, no role that passes the gates |
 | what | `find-system-leaks` | the leak test of a system actor: the rows it must not reach, read, changed and deleted as it, undone |
 | what | `explain-refusal` | why a message would be refused, as data: the check's answer, the record's scopes, the asker's roles and actions there, each sentence's parts (a `[:member …]`'s roles that give what it needs, `:given-by`) and the denies; read-only, for a REPL |
@@ -82,8 +86,10 @@ it), `:groundwork-access/not-allowed` (they may see it, but not do this; a sessi
 flag or a scope's state says no; a request from another Origin, or with a
 cookie and a token at once), and `:groundwork-access/signed-out` in place of either
 when nobody is signed in (nobody, a visitor, a wrong, ended or revoked
-token), whatever the record, so it tells nothing of whether one exists.
-groundwork-access adds the three to every handler it wraps; the app never writes
+token), whatever the record, so it tells nothing of whether one exists;
+and `:groundwork-access/token-refused`, an outside issuer's token that failed its
+check, never nobody, so a client knows to get a new one.
+groundwork-access adds the four to every handler it wraps; the app never writes
 them. In the browser, `access/put-refusals-into-shapes` adds them to the
 app's shapes by name. Each needs its text in the app's catalogs.
 
@@ -100,7 +106,17 @@ app's shapes by name. Each needs its text in the app's catalogs.
    :secure-cookie?       true                       ; false only over plain http, in development
    :token-lead           "shop_"                    ; a token's text starts with it, then 43 random characters
    :token-shown-characters 11                       ; the list shows a token's first 11: the lead and 6 more
-   :token-longest-days   365})                      ; a token ends at most this far from when it is made
+   :token-longest-days   365                        ; a token ends at most this far from when it is made
+   :outside-issuers      [{:name     :workos       ; [] for none
+                           :issuer   "https://auth.shop.example"                    ; a token's iss, exactly
+                           :keys-at  [:discovery "https://auth.shop.example/.well-known/oauth-authorization-server"]   ; or [:jwks address]
+                           :audience "https://shop.example/mcp"                     ; a token's aud holds it
+                           :algorithms #{"RS256"}                                    ; RS256/384/512, ES256/384/512: never none, never HMAC
+                           :subject-claim "sub"                                      ; linked to a person at sign-in
+                           :clock-skew-seconds 30                                    ; exp and nbf, at most 300
+                           :connect-timeout-ms 2000 :answer-timeout-ms 5000          ; fetching its keys
+                           :keys-kept-seconds 3600                                   ; then fetched again
+                           :fetch-at-most-every-seconds 30}]})                       ; an unknown kid fetches again, at most this often
 
 (def scope-kinds
   (access/check-scope-kinds
@@ -111,7 +127,8 @@ app's shapes by name. Each needs its text in the app's catalogs.
     :shop     {:table :shops :parent :company :single? false
                :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}}
                :roles   {"Staff" #{:orders/see :orders/edit} "Bookkeeper" #{:orders/see}}
-               :denies  [{:deny :writes :session :impersonated}                  ; an admin acting as someone
+               :denies  [{:deny :writes :session :impersonated}                  ; an admin acting as someone; or only some
+                         ;; of the kind's own actions: {:deny #{:messages/send :payments/take} :session :impersonated}
                          {:deny :writes :when [:= :shop/status "suspended"]}]}  ; keeps its reads
     :platform {:table nil :parent nil :single? true                              ; exactly one scope
                :actions {:platform/support #{:read}} :roles {"Support" #{:platform/support}} :denies []}}))
@@ -147,7 +164,7 @@ app's shapes by name. Each needs its text in the app's catalogs.
 
 ;; the deploy, as the role that owns the tables
 (let [tables (into (access/put-gates-on-tables app-tables scope-kinds)
-                   (conj access/access-tables access/sessions-table access/tokens-table))]
+                   (conj access/access-tables access/sessions-table access/tokens-table access/outside-subjects-table))]
   (postgres/migrate! owner-pool {:tables tables :extensions []
                                :functions (into access/function-files       ; groundwork-postgres makes these before the gates:
                                                 (access/make-access-functions app-tables scope-kinds))   ; they call them
@@ -197,17 +214,23 @@ app's shapes by name. Each needs its text in the app's catalogs.
 (let [{:keys [visitor-id set-cookie]} (access/start-visitor-session! app-pool request settings)]
   …)   ; the cart's row names visitor-id; set-cookie is nil when the request had a session already
 
-;; at the end of the app's own login: the visitor's rows become the person's
+;; at the end of the app's own login: the visitor's rows become the person's; their
+;; subject at WorkOS is linked, so WorkOS AuthKit's tokens with it are theirs (/mcp)
 (let [{:keys [set-cookie]} (access/sign-in! app-pool request person-id
-                                             {:settings settings :tables app-tables :session-flags #{}})]
+                                             {:settings settings :tables app-tables :session-flags #{}
+                                              :session-lasts :session-days :outside-subjects {:workos workos-user-id}})]
   {:status 302 :headers {"location" "/" "set-cookie" set-cookie}})
+;; an admin acting as someone: flagged, for one hour, never pushed out
+(access/sign-in! app-pool request person-id {:settings settings :tables app-tables :session-flags #{:impersonated}
+                                              :session-lasts {:minutes 60} :outside-subjects {}})
 
 ;; a signed-in person makes a token, in a message's step or on the app's own route;
 ;; the text is in the answer this once
 (access/make-token! app-pool request {:settings settings :name "catalog script"
                                        :ends-at (.plus (Instant/now) (Duration/ofDays 90))})
 ;=> {:token-id #uuid "…" :text "shop_q3V…" :shown-start "shop_q3V9xK" :ends-at #inst "…"}
-;; a script's call with it:  Authorization: Bearer shop_q3V…   is Anna's, with no session flags
+;; a script's call with it:  Authorization: Bearer shop_q3V…   is Anna's, with no session flags;
+;; its handlers' steps see (:groundwork-access/token-id context), for the app's history
 (access/list-tokens app-pool request settings)              ;=> [{:token-id … :name "catalog script" :shown-start "shop_q3V9xK" …}]
 (access/revoke-token! app-pool request settings token-id)   ;=> true
 
@@ -253,6 +276,26 @@ and a fill of the carried columns on insert, so the app's SQL never names
 them and its sentences compare the child's own column
 ([why](decisions/2026-10-23-records-under-records-carry-their-parents-columns.md)).
 
+## Outside issuers
+
+A bearer token that doesn't start with `:token-lead`, with outside issuers
+named, is an outside issuer's: a JWT. Its `iss` picks the issuer; then its
+`alg` (one of the issuer's `:algorithms`), its `kid` (a key of the issuer's
+JWKS document, or of the one its discovery document names, whose issuer
+must be `:issuer`), its signature, `exp` and `nbf` (with
+`:clock-skew-seconds`), `aud` (holding `:audience`) and its subject (the
+`:subject-claim`, linked to a person by their sign-in's
+`:outside-subjects`). The first that fails refuses the message
+`:groundwork-access/token-refused`, and the log line
+(`:groundwork-access/request-refused`) names it: `:malformed`,
+`:unsupported-header`, `:unknown-issuer`, `:algorithm-not-allowed`,
+`:no-key-id`, `:keys-unavailable`, `:unknown-key`, `:key-does-not-fit`,
+`:bad-signature`, `:expired`, `:not-yet-valid`, `:wrong-audience`,
+`:no-subject`, `:subject-not-linked`. The keys are kept in the process
+`:keys-kept-seconds`, fetched again for an unknown `kid`, and fetched at
+most every `:fetch-at-most-every-seconds`; never through a redirect.
+[Why](decisions/2026-10-27-groundwork-access-trusts-outside-issuers-the-app-names.md).
+
 ## Tests
 
 ```sh
@@ -266,7 +309,10 @@ pg_ctl -D /tmp/access-pg stop
 ```
 
 A gate refusing a row and a write in a read-only transaction log their
-errors during the tests; that is expected. The tests need a superuser
+errors during the tests; that is expected. The outside issuers' test
+starts a stand-in issuer on 127.0.0.1, with keys of its own; the session
+lookup's test prints, per question, the pool checkouts, the statements
+and the time. The tests need a superuser
 for `ACCESS_TEST_USER` (it makes the role `groundwork_access_app`, which owns
 nothing, and `groundwork_access_owner`, not a superuser, which owns the tables of
 the system actor's and the records-under-records tests, as in production;

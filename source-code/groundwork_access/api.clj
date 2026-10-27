@@ -8,7 +8,10 @@
    themselves (make-token!), for a script or an AI acting as them: a call
    with Authorization: Bearer <token> is theirs, with the same actions,
    scopes and gates. Every call after sign-in carries a proof groundwork-access made
-   and reads itself, the cookie or a token; no code names the person. A
+   and reads itself, the cookie or a token, or an outside issuer's token
+   the app named in its settings (WorkOS AuthKit's, for /mcp), checked by
+   the issuer's keys, as the person whose sign-in linked its subject; no
+   code names the person. A
    visitor (not signed in) gets a session of their own when the app first
    keeps something for them (start-visitor-session!); the rows kept name
    its id, and become the person's at sign-in. A server calling the app
@@ -71,7 +74,12 @@
 
      {:cookie-name \"app_session\" :session-days 30 :visitor-session-days 7
       :renew-after-minutes 60 :allowed-origin \"https://shop.example\" :secure-cookie? true
-      :token-lead \"shop_\" :token-shown-characters 11 :token-longest-days 365}"
+      :token-lead \"shop_\" :token-shown-characters 11 :token-longest-days 365
+      :outside-issuers [{:name :workos :issuer \"https://auth.shop.example\"
+                         :keys-at [:discovery \"https://auth.shop.example/.well-known/oauth-authorization-server\"]
+                         :audience \"https://shop.example/mcp\" :algorithms #{\"RS256\"} :subject-claim \"sub\"
+                         :clock-skew-seconds 30 :connect-timeout-ms 2000 :answer-timeout-ms 5000
+                         :keys-kept-seconds 3600 :fetch-at-most-every-seconds 30}]}"
   settings/settings-shape)
 
 (def sessions-table
@@ -82,6 +90,7 @@
                [:session/person-id   :uuid         {:optional? true}]   ; nil: a visitor's
                [:session/visitor-id  :uuid         {:optional? true}]   ; nil: a person's
                [:session/flags       :string       {:default ""}]
+               [:session/renews      :boolean      {:default true}]   ; false: ends at its end, never pushed out
                [:session/created-at  :time/instant {:default :now}]
                [:session/ends-at     :time/instant]]
    :indexes   [{:columns [[:session/person-id :ascending :nulls-last]]
@@ -118,6 +127,25 @@
    :gates     nil
    :on-change nil})
 
+(def outside-subjects-table
+  "Which person each subject at an outside issuer is, in groundwork-access's own
+   folder: linked at the person's sign-in (sign-in!'s :outside-subjects),
+   unlinked by sign-out-everywhere!. The issuer is its :name in the
+   settings, as text."
+  {:table     :groundwork-access/outside-subjects
+   :columns   [[:outside-subject/issuer    :string       {:primary-key? true}]
+               [:outside-subject/subject   :string       {:primary-key? true}]
+               [:outside-subject/person-id :uuid]
+               [:outside-subject/linked-at :time/instant {:default :now}]]
+   :indexes   [{:columns [[:outside-subject/person-id :ascending :nulls-last]]
+                :method :btree :ops {} :unique? false :where nil}]
+   :uniques   []
+   :checks    []
+   :references []
+   :triggers   []
+   :gates     nil
+   :on-change nil})
+
 (defn sign-in!
   "Makes a session for a person whose login the app has proven, on the
    app's own route (request is its Ring request). In one transaction: the
@@ -125,12 +153,18 @@
    person's (every table with a :visitor column that :moves-to a person
    column: the person set, the visitor emptied); the request's session
    ends, whatever it was, so a key planted before the login is worthless
-   after it; the new one is made, with the session's flags. Returns
-   {:set-cookie text} for the answer's Set-Cookie header. The options,
-   every key required, are checked first:
+   after it; the new one is made, with the session's flags and its
+   lifetime; the person's subject at each outside issuer the login proved
+   is linked to them. Returns {:set-cookie text} for the answer's
+   Set-Cookie header. The options, every key required, are checked first:
+   :session-lasts :session-days (the settings', pushed out when seen
+   again) or {:minutes 60} (from now, never pushed out); :outside-subjects
+   {issuer-name subject}, {} for none, each issuer one the settings name:
 
-     (access/sign-in! pool request person-id {:settings settings :tables tables :session-flags #{}})
-     (access/sign-in! pool request person-id {:settings settings :tables tables :session-flags #{:impersonated}})"
+     (access/sign-in! pool request person-id {:settings settings :tables tables :session-flags #{}
+                                              :session-lasts :session-days :outside-subjects {:workos workos-user-id}})
+     (access/sign-in! pool request person-id {:settings settings :tables tables :session-flags #{:impersonated}
+                                              :session-lasts {:minutes 60} :outside-subjects {}})"
   [pool request person-id options]
   (sessions/sign-in! pool request person-id options))
 
@@ -153,9 +187,11 @@
   (sessions/sign-out! pool request settings))
 
 (defn sign-out-everywhere!
-  "Ends every session and every token of a person at once, in one
-   transaction (signing out everywhere, a person the app removes).
-   Returns how many of each ended: {:sessions 2 :tokens 1}."
+  "Ends every session and every token of a person at once, and unlinks
+   their subjects at outside issuers (their outside tokens are refused
+   until they sign in again), in one transaction (signing out everywhere,
+   a person the app removes). Returns how many of each ended:
+   {:sessions 2 :tokens 1 :outside-subjects 1}."
   [pool person-id]
   (sessions/sign-out-everywhere! pool person-id))
 
@@ -173,8 +209,8 @@
    {:settings :name \"catalog script\" :ends-at instant}, the end after now
    and at most :token-longest-days from now. Refused (throws
    :groundwork-access/no-token-for-asker): nobody signed in; a token's call (a token
-   makes no token); a session with flags (the token, having none, would
-   shed them).
+   makes no token), an outside issuer's token's too; a session with flags
+   (the token, having none, would shed them).
 
      (access/make-token! pool request {:settings settings :name \"catalog script\"
                                         :ends-at (.plus (Instant/now) (Duration/ofDays 90))})"
@@ -217,6 +253,15 @@
      flags (a token has none) and no visitor; no Origin check, since a
      browser never sends the header on its own; a wrong, ended or revoked
      token is nobody;
+   - with outside issuers named (the settings' :outside-issuers), a bearer
+     token not starting with :token-lead is an outside issuer's, a JWT:
+     checked by the issuer's keys (fetched, kept, fetched again for an
+     unknown kid, at most every :fetch-at-most-every-seconds), its iss,
+     aud, exp and nbf (with :clock-skew-seconds) and its alg (the issuer's
+     :algorithms); its subject's person, linked at sign-in, with no session
+     flags and no visitor; no Origin check. One failing is refused
+     :groundwork-access/token-refused, never nobody, the problem written to the log
+     (groundwork-access.outside lists them);
    - else the session's cookie: a request that changes something must
      come from the app's own pages (its Origin), or it is refused
      :groundwork-access/not-allowed; the session's person or visitor and its flags;
@@ -227,11 +272,21 @@
 
    Then the context gets :groundwork-access/person-id (nil when nobody is signed
    in), :groundwork-access/visitor-id (a visitor session's id, nil when someone is
-   signed in or there is none) and :groundwork-access/session-flags (#{} for none),
-   and the person (with the token's id, {:person-id … :token-id …}) or the
-   visitor is added to the message's log (:groundwork-steps/log, given
-   groundwork-logs's with-context), so every line the later steps write says who
-   asked. Checks the settings first."
+   signed in or there is none), :groundwork-access/session-flags (#{} for none),
+   :groundwork-access/token-id (the id of the token that asked, as list-tokens
+   lists it, nil for none) and :groundwork-access/outside-issuer (the outside
+   issuer's :name, nil for none), so an app's history can name what asked;
+   and the person (with the token's id or the issuer, {:person-id …
+   :token-id …}) or the visitor is added to the message's log
+   (:groundwork-steps/log, given groundwork-logs's with-context), so every line the
+   later steps write says who asked.
+
+   Where it reads: in the question's own transaction, when the context
+   has one at :groundwork-access/transaction (put-access-into-handlers' and
+   make-my-actions-handler's open it read-write and run this step first in
+   it: the lookup is its first statement, on its connection, and a session
+   seen again is pushed out in it); else on its pool (a step run on its
+   own, outside a handler). Checks the settings first."
   [pool settings]
   (askers/make-find-session-step pool settings))
 
@@ -600,7 +655,11 @@
    handler's :refusals.
 
    Then each gets the check in front of its steps and runs them in one
-   transaction that tells Postgres who is asking. The check refuses (by
+   transaction, the question's own, that tells Postgres who is asking:
+   opened read-write, the find-session step run first in it (the session
+   or token looked up on the same connection, its first statement; one
+   pool checkout per question), then made read-only for an action that
+   only reads, in the statement that tells Postgres who asks. The check refuses (by
    groundwork-steps's refuse): a record its asker may not reach :groundwork-access/not-found,
    one they may see but not act on :groundwork-access/not-allowed; a :scope [kind
    param] whose scope doesn't hold the action (a membership above it
@@ -668,7 +727,8 @@
   "groundwork-access's own reasons, each with its data's shape (all nil: none), the
    same on both sides: :groundwork-access/signed-out, nobody is signed in and the
    check refused; :groundwork-access/not-found; :groundwork-access/not-allowed (the check, or
-   a request that isn't the app's own). put-access-into-handlers adds them
+   a request that isn't the app's own); :groundwork-access/token-refused, an outside
+   issuer's token that failed its check (the find-session step's). put-access-into-handlers adds them
    to every handler's :refusals, make-my-actions-handler's has them; each
    needs its text in the app's catalogs."
   shapes/refusals)
@@ -789,7 +849,10 @@
    settings :read-only? false :scope-kinds scope-kinds :log log} (the
    checked scope kinds; :log the caller's, the request's with its request
    id, which the transaction carries for groundwork-postgres's run-after-commit!, or
-   nil for one that keeps no work). A transaction handed in is refused.
+   nil for one that keeps no work). The asker is looked up in that
+   transaction, its first statement; it is opened read-write (a session
+   seen again is pushed out in it) and, :read-only? true, made read-only
+   before f. A transaction handed in is refused.
 
      (access/run-as-asker-of-request! pool request {:settings settings :read-only? true :scope-kinds scope-kinds :log log}
                                        (fn [transaction] (postgres/find-rows transaction list-orders {})))"

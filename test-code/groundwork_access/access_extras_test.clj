@@ -139,7 +139,7 @@
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
                          :allowed-origin "http://app.test" :secure-cookie? false
-                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []})
 
 ;; -----------------------------------------------------------------------------
 ;; Handlers
@@ -177,7 +177,7 @@
 (defn- make-database! [owner-pool]
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS groundwork_access CASCADE; DROP SCHEMA IF EXISTS groundwork_postgres CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'groundwork_access_app') THEN CREATE ROLE groundwork_access_app LOGIN; END IF; END $$")
-  (let [ready (into (access/put-gates-on-tables tables scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table))]
+  (let [ready (into (access/put-gates-on-tables tables scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table access/outside-subjects-table))]
     (with-out-str @(:slow-part (postgres/migrate! owner-pool (test-settings/declare-tables-and-access ready tables scope-kinds) [] test-settings/migrate-options)))
     (postgres/grant-tables-to-role! owner-pool ready "groundwork_access_app"))
   (run-sql! owner-pool (str "INSERT INTO companies VALUES ('" company-1 "')"))
@@ -310,7 +310,7 @@
                                                                               :find-session-step find-step :rate-limit nil})}
             sign-in    (fn [person flags] (cookie-of (:set-cookie (access/sign-in! app-pool {:headers {}} person
                                                                                     {:settings settings :tables tables
-                                                                                     :session-flags flags}))))
+                                                                                     :session-flags flags :session-lasts :session-days :outside-subjects {}}))))
             visitor-1  (access/start-visitor-session! app-pool {:headers {}} settings)
             visitor-2  (access/start-visitor-session! app-pool {:headers {}} settings)
             v1-cookie  (cookie-of (:set-cookie visitor-1))
@@ -473,7 +473,7 @@
               (is (= [] (leaks (sign-in eve #{}) [order-v order-42])) "a signed-in stranger")))
 
           (testing "sign-in: the visitor's rows become the person's, the visitor session ends"
-            (access/sign-in! app-pool (request-of v1-cookie) vic {:settings settings :tables tables :session-flags #{}})
+            (access/sign-in! app-pool (request-of v1-cookie) vic {:settings settings :tables tables :session-flags #{} :session-lasts :session-days :outside-subjects {}})
             (is (= #{} (orders-seen-by app-pool {:visitor-id v1})) "the visitor has nothing left")
             (is (= #{order-v} (orders-seen-by app-pool {:person-id vic})) "the person has it")
             (is (= #{order-w} (orders-seen-by app-pool {:visitor-id v2})) "another visitor's rows stay")

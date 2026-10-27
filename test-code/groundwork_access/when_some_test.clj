@@ -66,7 +66,7 @@
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
                          :allowed-origin "http://app.test" :secure-cookie? false
-                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []})
 
 (defn- query [text] (postgres/make-query-from-sql-text "a test statement" text))
 
@@ -95,7 +95,7 @@
 (defn- make-database! [owner-pool]
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS groundwork_access CASCADE; DROP SCHEMA IF EXISTS groundwork_postgres CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'groundwork_access_app') THEN CREATE ROLE groundwork_access_app LOGIN; END IF; END $$")
-  (let [ready (into (access/put-gates-on-tables tables scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table))]
+  (let [ready (into (access/put-gates-on-tables tables scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table access/outside-subjects-table))]
     (with-out-str @(:slow-part (postgres/migrate! owner-pool (test-settings/declare-tables-and-access ready tables scope-kinds) [] test-settings/migrate-options)))
     (postgres/grant-tables-to-role! owner-pool ready "groundwork_access_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "', NULL), ('" shop-c "', now())"))
@@ -121,7 +121,7 @@
                        {:request-method :post
                         :headers (cond-> {"origin" "http://app.test"}
                                    person (assoc "cookie" (first (str/split (:set-cookie (access/sign-in! app-pool {:headers {}} person
-                                                                                                           {:settings settings :tables [] :session-flags #{}}))
+                                                                                                           {:settings settings :tables [] :session-flags #{} :session-lasts :session-days :outside-subjects {}}))
                                                                             #";"))))})
             ask      (fn [person handler-name params]
                        (without-request-id (get (answer-message ready (request person) {handler-name params} {:shaper shaper :log log})

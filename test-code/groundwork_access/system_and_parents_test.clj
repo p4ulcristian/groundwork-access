@@ -128,7 +128,7 @@
                             "END $$"))
   (run-sql! super-pool "GRANT CREATE ON DATABASE postgres TO groundwork_access_owner; ALTER SCHEMA public OWNER TO groundwork_access_owner")
   (let [owner-pool (test-settings/start-pool! "groundwork_access_owner" 2)
-        ready      (into (access/put-gates-on-tables tables scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table))]
+        ready      (into (access/put-gates-on-tables tables scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table access/outside-subjects-table))]
     (try
       (with-out-str @(:slow-part (postgres/migrate! owner-pool (test-settings/declare-tables-and-access ready tables scope-kinds) [] test-settings/migrate-options)))
       (postgres/grant-tables-to-role! owner-pool ready "groundwork_access_app")
@@ -257,12 +257,12 @@
                         :find-session-step (access/make-find-session-step app-pool {:cookie-name "app_session" :session-days 1
                                                                                      :visitor-session-days 1 :renew-after-minutes 60
                                                                                      :allowed-origin "http://app.test" :secure-cookie? false
-                                                                                     :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})})
+                                                                                     :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []})})
                 {:keys [set-cookie]} (access/sign-in! app-pool {:headers {}} anna
                                                        {:settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1
                                                                    :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false
-                                                                   :token-lead "app_" :token-shown-characters 10 :token-longest-days 30}
-                                                        :tables [] :session-flags #{}})
+                                                                   :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []}
+                                                        :tables [] :session-flags #{} :session-lasts :session-days :outside-subjects {}})
                 request {:request-method :post
                          :headers {"origin" "http://app.test" "cookie" (first (str/split set-cookie #";"))}}]
             (is (= (refusal :groundwork-access/not-found)
@@ -296,7 +296,7 @@
             (is (= [] (as-person app-pool anna #(postgres/find-rows % (postgres/make-query-from-sql-text "photos" "SELECT photo__id FROM photos") {}))))
             (let [settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
                             :allowed-origin "http://app.test" :secure-cookie? false
-                            :token-lead "app_" :token-shown-characters 10 :token-longest-days 30}
+                            :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []}
                   ready    (access/put-access-into-handlers
                             {:jobs/one {:action :jobs/see :record [:jobs :job/id] :params-shape [:map [:job/id :uuid]]
                                         :answer-shape [:map [:job/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
@@ -307,7 +307,7 @@
                              {:request-method :post
                               :headers {"origin" "http://app.test"
                                         "cookie" (first (str/split (:set-cookie (access/sign-in! app-pool {:headers {}} person
-                                                                                                  {:settings settings :tables [] :session-flags #{}}))
+                                                                                                  {:settings settings :tables [] :session-flags #{} :session-lasts :session-days :outside-subjects {}}))
                                                                    #";"))}})
                   job-id   (:job/id (job))]
               (is (= (refusal :groundwork-access/not-found) (without-request-id (:jobs/one (answer-message ready (request anna) {:jobs/one {:job/id job-id}}

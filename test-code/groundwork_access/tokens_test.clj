@@ -23,7 +23,7 @@
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
                          :allowed-origin "http://app.test" :secure-cookie? false
-                         :token-lead "shop_" :token-shown-characters 11 :token-longest-days 90})
+                         :token-lead "shop_" :token-shown-characters 11 :token-longest-days 90 :outside-issuers []})
 
 (def ^:private scope-kinds
   (access/check-scope-kinds
@@ -69,6 +69,11 @@
                      :params-shape [:map [:shop/id :uuid] [:order/shop-id :uuid]] :answer-shape [:map]
                      :refusals {} :rate-limit nil :run-steps-in nil
                      :steps [(answer-with (fn [t data] (postgres/run-statement! t insert-order (select-keys data [:order/shop-id])) {}))]}
+   ;; which token asked, for the app's history
+   :orders/asked-by {:action :orders/see :scope :every-scope-holding-the-action
+                     :params-shape [:map] :answer-shape [:map [:token-id [:maybe :uuid]]]
+                     :refusals {} :rate-limit nil :run-steps-in nil
+                     :steps [{:name :answer :enter #(steps/add-answer-to-context % {:token-id (:groundwork-access/token-id %)})}]}
    :orders/all      {:action :orders/see :scope :every-scope-holding-the-action
                      :params-shape [:map] :answer-shape [:vector :uuid]
                      :refusals {} :rate-limit nil :run-steps-in nil
@@ -102,7 +107,7 @@
 (defn- make-database! [owner-pool]
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS groundwork_access CASCADE; DROP SCHEMA IF EXISTS groundwork_postgres CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'groundwork_access_app') THEN CREATE ROLE groundwork_access_app LOGIN; END IF; END $$")
-  (let [ready (into (access/put-gates-on-tables tables scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table))]
+  (let [ready (into (access/put-gates-on-tables tables scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table access/outside-subjects-table))]
     (with-out-str @(:slow-part (postgres/migrate! owner-pool (test-settings/declare-tables-and-access ready tables scope-kinds) [] test-settings/migrate-options)))
     (postgres/grant-tables-to-role! owner-pool ready "groundwork_access_app"))
   (run-sql! owner-pool (str "INSERT INTO shops VALUES ('" shop-a "'), ('" shop-b "')"))
@@ -131,7 +136,7 @@
                                                                    :find-session-step step})
             cookie-of  (fn [person flags]
                          (first (str/split (:set-cookie (access/sign-in! app-pool {:headers {}} person
-                                                                          {:settings settings :tables [] :session-flags flags}))
+                                                                          {:settings settings :tables [] :session-flags flags :session-lasts :session-days :outside-subjects {}}))
                                            #";")))
             browser    (fn [person] {:request-method :post :headers {"origin" "http://app.test" "cookie" (cookie-of person #{})}})
             bearer     (fn [text] {:request-method :post :headers {"authorization" (str "Bearer " text)}})
@@ -164,6 +169,10 @@
               ((:groundwork-steps/log context) :info :test/later-step {}))
             (is (= [{"person-id" (str anna) "token-id" (str (:token-id anna-token))}] (mapv #(get % "context") @test-log/lines))
                 "the lines say who asked, and by which token"))
+
+          (testing "a handler sees which token asked: its id, as list-tokens lists it; nil for a browser's"
+            (is (= {:token-id (str (:token-id anna-token))} (ask (bearer (:text anna-token)) :orders/asked-by {})))
+            (is (= {:token-id nil} (ask (browser anna) :orders/asked-by {}))))
 
           (testing "a wrong token is nobody; a request with a cookie and a token is refused"
             (is (= [nil nil #{}] (asker-of (bearer (str (:text anna-token) "x")))))

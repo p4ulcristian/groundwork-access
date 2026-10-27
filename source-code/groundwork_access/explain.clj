@@ -253,7 +253,7 @@
         ;; groundwork-access's own, read-only: keeps no work
         (postgres/run-in-transaction! pool {:read-only? true :log nil}
                                     (fn [transaction]
-                                      (let [actions-by-scope (asking/set-asking-with-every-action! transaction scope-kinds asker)]
+                                      (let [actions-by-scope (asking/set-asking-with-every-action! transaction scope-kinds asker false)]   ; read-only already
                                         (asking/set-passing! transaction)
                                         (as-> (merge {:handler handler-name
                                                       :action  action

@@ -20,4 +20,4 @@
   [asker]
   (let [asker (settings/check-asker asker)]
     {:name  :groundwork-access/asking-as
-     :enter (fn [context] (askers/put-asker-into-context context asker nil))}))
+     :enter (fn [context] (askers/put-asker-into-context context asker {:token-id nil :outside-issuer nil}))}))

@@ -13,10 +13,14 @@
    :groundwork-access/not-found    the asker may not reach the record or the scope, nor see it
    :groundwork-access/not-allowed  the asker may see it but not do this, a session flag or a scope's
                          state says no, or the request isn't the app's own (another Origin, a
-                         cookie and a token at once)"
-  {:groundwork-access/signed-out  nil
-   :groundwork-access/not-found   nil
-   :groundwork-access/not-allowed nil})
+                         cookie and a token at once)
+   :groundwork-access/token-refused  an outside issuer's token failed its check (its keys, issuer,
+                         audience, times, algorithm, or a subject no sign-in linked): never
+                         nobody, so a client knows to get a new one"
+  {:groundwork-access/signed-out    nil
+   :groundwork-access/not-found     nil
+   :groundwork-access/not-allowed   nil
+   :groundwork-access/token-refused nil})
 
 (def my-actions-answer-shape
   "The answer of make-my-actions-handler's handler, \"what may I do?\":

@@ -7,7 +7,7 @@
 
 (deftest the-api-names
   (is (= '#{;; who is asking
-           settings-shape sessions-table sign-in! start-visitor-session! sign-out! sign-out-everywhere! delete-ended-sessions!
+           settings-shape sessions-table outside-subjects-table sign-in! start-visitor-session! sign-out! sign-out-everywhere! delete-ended-sessions!
            find-session-key-of-request make-find-session-step run-as-asker-of-request!
            tokens-table make-token! list-tokens revoke-token! delete-ended-tokens!
            ;; what may they do

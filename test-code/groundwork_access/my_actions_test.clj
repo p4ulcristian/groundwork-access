@@ -76,7 +76,7 @@
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
                          :allowed-origin "http://app.test" :secure-cookie? false
-                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []})
 
 (def ^:private no-session-step {:name :no-session :enter identity})
 
@@ -121,11 +121,11 @@
                     (access/make-my-actions-handler {:pool pool :tables tables :scope-kinds scope-kinds
                                                       :find-session-step (access/make-find-session-step pool settings)
                                                       :rate-limit nil})}
-          cookie   #(first (str/split (:set-cookie (access/sign-in! pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))
+          cookie   #(first (str/split (:set-cookie (access/sign-in! pool {:headers {}} % {:settings settings :tables [] :session-flags #{} :session-lasts :session-days :outside-subjects {}})) #";"))
           ask      #(ask-as handlers %1 %2)]
       (try
         (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS groundwork_access CASCADE; DROP SCHEMA IF EXISTS groundwork_postgres CASCADE")
-        (with-out-str @(:slow-part (postgres/migrate! pool (test-settings/declare-tables (into [shops access/sessions-table access/tokens-table] access/access-tables)) [] test-settings/migrate-options)))
+        (with-out-str @(:slow-part (postgres/migrate! pool (test-settings/declare-tables (into [shops access/sessions-table access/tokens-table access/outside-subjects-table] access/access-tables)) [] test-settings/migrate-options)))
         (postgres/run-in-transaction! pool {:read-only? false :log nil}
           (fn [transaction]
             (access/add-scope! transaction scope-kinds :shop shop-9 paul nil)

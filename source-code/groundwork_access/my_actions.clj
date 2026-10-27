@@ -23,14 +23,16 @@
    scope's state, out of that scope. Scopes come by kind, then id;
    actions sorted.
 
-   It runs as the asker: the find-session step first (the Origin checked,
-   the person or visitor), then one read-only transaction that tells
+   It runs as the asker, in one transaction: the find-session step first
+   (the Origin checked, the person or visitor, the lookup the
+   transaction's first statement), then, read-only from there, it tells
    Postgres who is asking (every action, in every scope holding it), in which the step reads groundwork-access's tables and
    the vias' and denies' functions. It is a hint for screens: the check
    and the gates decide."
   (:require
    [groundwork-postgres.api :as postgres]
    [groundwork-access.asking :as asking]
+   [groundwork-access.check :as check]
    [groundwork-access.conditions :as conditions]
    [groundwork-access.scope-kinds :as scope-kinds]
    [groundwork-access.shapes :as shapes]
@@ -132,7 +134,8 @@
     {:name  :groundwork-access/answer-my-actions
      :enter (fn [{:groundwork-access/keys [person-id visitor-id session-flags transaction] :as context}]
               (let [held     (asking/set-asking-with-every-action! transaction scope-kinds
-                                                                       {:person-id person-id :visitor-id visitor-id :session-flags session-flags})
+                                                                       {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
+                                                                       true)   ; read-only from here on
                     by-scope (-> (add-held-for held held-for)
                                  (as-> by-scope
                                        (reduce (fn [by-scope {:keys [action kind] :as via}]
@@ -150,16 +153,13 @@
                 (steps/add-answer-to-context context (make-answer by-scope open-now))))}))
 
 (defn- make-run-steps-in
-  "The session step, then the steps in one read-only transaction at
-   :groundwork-access/transaction."
+  "The session step, then the steps, in the question's own transaction
+   at :groundwork-access/transaction (check/run-in-question-transaction!); the answer
+   step makes it read-only before it reads."
   [{:keys [pool find-session-step]}]
   (fn [run context]
-    (let [context (steps/run-steps-until-answered [find-session-step] context)]
-      (if (steps/does-context-have-answer? context)
-        context
-        (postgres/run-in-transaction! pool {:read-only? true :log (:groundwork-steps/log context)}
-                                    (fn [transaction]
-                                      (run (assoc context :groundwork-access/transaction transaction))))))))
+    (check/run-in-question-transaction! pool find-session-step context
+                                        (fn [_transaction context] (run context)))))
 
 (defn make-my-actions-handler
   "The handler, bridge's keys written out, groundwork-access's reasons its

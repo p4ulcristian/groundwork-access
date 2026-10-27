@@ -11,6 +11,8 @@
 
 (def ^:private set-asking (postgres/make-query-from-sql-file "groundwork_access/set_asking.sql"))
 
+(def ^:private set-asking-read-only (postgres/make-query-from-sql-file "groundwork_access/set_asking_read_only.sql"))
+
 (def ^:private set-passing (postgres/make-query-from-sql-file "groundwork_access/set_passing.sql"))
 
 (defn- turn-actions-into-holding
@@ -62,10 +64,14 @@
 (defn set-asking-with-every-action!
   "Lists the person's actions (none for a visitor or nobody) and tells
    Postgres, for this transaction, that the asker is asking with every
-   action, holding them. Returns the actions, by scope."
-  [transaction scope-kinds {:keys [person-id] :as asker}]
-  (let [actions (if person-id (memberships/list-actions-of-person transaction scope-kinds person-id) {})]
-    (set-asking! transaction asker {:acting :every-action :holding actions})
+   action, holding them; read-only? true, in the same statement, that the
+   transaction is read-only from here on (it was opened read-write, so
+   the session step could push a session out in it). Returns the
+   actions, by scope."
+  [transaction scope-kinds {:keys [person-id] :as asker} read-only?]
+  (let [actions (if person-id (memberships/list-actions-of-person transaction scope-kinds person-id) {})
+        text    (turn-asker-into-text asker {:acting :every-action :holding actions})]
+    (postgres/find-one-row transaction (if read-only? set-asking-read-only set-asking) {:asking text})
     actions))
 
 (defn set-moving!

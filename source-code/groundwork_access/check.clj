@@ -17,8 +17,9 @@
                      :scope  :every-scope-holding-the-action    ; or :no-scope: only open sentences
                      …}}
 
-   Each message then runs: find the session; in one transaction (read-only
-   when the action only reads), tell Postgres who is asking
+   Each message then runs in one transaction, opened read-write: find
+   the session (the lookup its first statement, on its connection); made
+   read-only when the action only reads, tell Postgres who is asking
    (groundwork_access.asking), with every action, for the check:
    - :record: may this person do the action on the record? Not, and they
      can't see it either: :groundwork-access/not-found (nothing tells them it
@@ -307,22 +308,39 @@
   [{:keys [scope-kinds]} action]
   (scope-kinds/does-action-only-read? scope-kinds action))
 
+(defn run-in-question-transaction!
+  "The question's own transaction: opened read-write on the pool, the
+   find-session step run in it (its lookup the transaction's first
+   statement, on the same connection, a session seen again pushed out in
+   it); answered by the step (refused), that answer. Else (f transaction
+   context), the transaction then carrying the message's log with the
+   asker in it (a step's after-commit work that fails is written there,
+   with the request id and the person). f makes it read-only, for an
+   action that only reads, in the statement that tells Postgres who asks
+   (asking/set-asking-with-every-action!)."
+  [pool find-session-step context f]
+  ;; the message's log, with its request id: the step adds the asker to it
+  (postgres/run-in-transaction! pool {:read-only? false :log (:groundwork-steps/log context)}
+                                (fn [transaction]
+                                  (let [context (steps/run-steps-until-answered [find-session-step]
+                                                                                (assoc context :groundwork-access/transaction transaction))]
+                                    (if (steps/does-context-have-answer? context)
+                                      context
+                                      ;; joined: the same transaction, carrying the log with the asker
+                                      (postgres/run-in-transaction! transaction {:read-only? false :log (:groundwork-steps/log context)}
+                                                                    (fn [transaction]
+                                                                      (f transaction (assoc context :groundwork-access/transaction transaction)))))))))
+
 (defn- make-run-steps-in [{:keys [pool find-session-step scope-kinds] :as setup} {:keys [action]}]
-  (fn [run context]
-    (let [context (steps/run-steps-until-answered [find-session-step] context)]
-      (if (steps/does-context-have-answer? context)
-        context
-        ;; the message's log, with its request id (and the person, once found): a
-        ;; step's after-commit work that fails is written there
-        (postgres/run-in-transaction! pool {:read-only? (does-action-only-read? setup action) :log (:groundwork-steps/log context)}
-                                    (fn [transaction]
-                                      (let [{:groundwork-access/keys [person-id visitor-id session-flags]} context
-                                            ;; the check reads with every action; it then tells only the handler's
-                                            actions (asking/set-asking-with-every-action! transaction scope-kinds
-                                                                                          {:person-id person-id :visitor-id visitor-id :session-flags session-flags})]
-                                        (run (assoc context
-                                                    :groundwork-access/transaction transaction
-                                                    :groundwork-access/actions actions)))))))))
+  (let [read-only? (does-action-only-read? setup action)]
+    (fn [run context]
+      (run-in-question-transaction! pool find-session-step context
+                                    (fn [transaction {:groundwork-access/keys [person-id visitor-id session-flags] :as context}]
+                                      ;; the check reads with every action; it then tells only the handler's
+                                      (let [actions (asking/set-asking-with-every-action! transaction scope-kinds
+                                                                                          {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
+                                                                                          read-only?)]
+                                        (run (assoc context :groundwork-access/actions actions))))))))
 
 (defn put-access-into-handlers
   "Every handler checked, then given the check in front of its steps, the

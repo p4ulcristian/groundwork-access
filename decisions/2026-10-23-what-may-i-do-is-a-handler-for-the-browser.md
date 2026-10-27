@@ -1,3 +1,5 @@
+> **Changed in part** by [The session is looked up in the question's own transaction](2026-10-27-the-session-is-looked-up-in-the-questions-own-transaction.md) (2026-10-27, v0.8.0): the find-session step runs in the handler's transaction, opened read-write; its step makes it read-only before it reads.
+
 > **Changed in part** by [The family and its composer are groundwork](https://github.com/p4ulcristian/groundwork/blob/Starting-from-the-bottom/decisions/2026-10-23-the-family-and-its-composer-are-groundwork.md) (2026-10-23): manor, the family, and house, the composer, are both named groundwork now.
 
 > **Changed in part** by [doorman owns the shape of "what may I do?"'s answer, on both sides](2026-10-23-doorman-owns-the-my-actions-answer-shape-on-both-sides.md) (2026-10-23, v0.6.0): the shape is written once, in `doorman.shapes` (`.cljc`), and the browser takes it from `doorman.api`'s `.cljs` half; parlor's copy is gone.

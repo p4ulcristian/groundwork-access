@@ -1,5 +1,7 @@
 # A session flag and a scope's state may say no, on the kind whose actions they deny
 
+> **Added to** by [What an impersonator may not do needs nothing new](2026-10-27-impersonation-s-denies-need-nothing-new.md) (2026-10-27, checked on v0.8.0): a deny of a set of actions by `:impersonated` is what an impersonator may not do; the check, the gates, "what may I do?" and explain-refusal hold it.
+
 > **Changed in part** by [A suspended scope's own row is frozen for its own kind's actions](2026-10-23-a-suspended-scopes-own-row-is-frozen-for-its-own-kinds-actions.md) (2026-10-23, built on tidy-up, not released): a state deny holds on the scope's own row too (the shop in `shops`), for the kind's own actions; the state is lifted by another kind's action or a named system actor.
 
 > Since v0.7.0. Builds the deny of [Access rules are sentences in doorman's language](2026-10-17-access-rules-are-sentences-in-doormans-language.md) and its "Settled while building".

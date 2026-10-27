@@ -1,5 +1,7 @@
 # doorman owns a person's tokens, and only sign-in names a person
 
+> **Changed in part** by [The session is looked up in the question's own transaction](2026-10-27-the-session-is-looked-up-in-the-questions-own-transaction.md), [A handler sees which token asked](2026-10-27-a-handler-sees-which-token-asked.md) and [groundwork-access trusts outside issuers the app names](2026-10-27-groundwork-access-trusts-outside-issuers-the-app-names.md) (2026-10-27, v0.8.0): `run-as-asker-of-request!` finds its asker in its own transaction; the context names the token, `:groundwork-access/token-id`; `/mcp`'s WorkOS tokens are checked by groundwork-access as an outside issuer's, the person linked at sign-in, and make no token; `sign-out-everywhere!` unlinks them too.
+
 > **Changed in part** by [A transaction doorman opens carries its caller's log](2026-10-23-a-transaction-doorman-opens-carries-its-callers-log.md) (2026-10-23, on tidy-up): `run-as-asker-of-request!` takes `{:settings :read-only? :scope-kinds :log}`, the caller's log (or nil) written out.
 
 > The user's decision, 2026-10-23, from the tidy-up after Groundwork v1.1 (Iron Rainbow's personal tokens for the catalog and AI calls, its `labs_api_tokens`). Changes in part [The session is the only truth](2026-10-12-the-session-is-the-only-truth.md) and [Sessions for visitors, and none for servers](2026-10-12-sessions-for-visitors-and-none-for-servers.md). Built on tidy-up, not released.

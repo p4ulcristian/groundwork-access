@@ -55,7 +55,7 @@
 (def ^:private order-99 #uuid "99000000-0000-4000-8000-000000000099")
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false
-                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []})
 
 (def ^:private answer-the-order
   {:name  :answer-the-order
@@ -110,7 +110,7 @@
 
 (defn- make-database! [pool]
   (run-sql! pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS groundwork_access CASCADE; DROP SCHEMA IF EXISTS groundwork_postgres CASCADE")
-  (with-out-str @(:slow-part (postgres/migrate! pool (test-settings/declare-tables-and-access (into [shops orders access/sessions-table access/tokens-table] access/access-tables) [shops orders] scope-kinds) [] test-settings/migrate-options)))
+  (with-out-str @(:slow-part (postgres/migrate! pool (test-settings/declare-tables-and-access (into [shops orders access/sessions-table access/tokens-table access/outside-subjects-table] access/access-tables) [shops orders] scope-kinds) [] test-settings/migrate-options)))
   (run-sql! pool (str "INSERT INTO shops VALUES ('" shop-7 "'), ('" shop-9 "')"))
   (run-sql! pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
   (postgres/run-in-transaction! pool {:read-only? false :log nil}
@@ -142,8 +142,10 @@
   (let [ready (access/put-access-into-handlers
                (assoc-in handlers [:orders/one :refusals] {:order/archived nil})
                {:pool (Object.) :tables [shops orders] :scope-kinds scope-kinds :find-session-step no-session-step})]
-    (is (= {:groundwork-access/signed-out nil :groundwork-access/not-found nil :groundwork-access/not-allowed nil} (:refusals (:orders/remind ready))))
-    (is (= #{:order/archived :groundwork-access/signed-out :groundwork-access/not-found :groundwork-access/not-allowed} (set (keys (:refusals (:orders/one ready)))))
+    (is (= {:groundwork-access/signed-out nil :groundwork-access/not-found nil :groundwork-access/not-allowed nil :groundwork-access/token-refused nil}
+           (:refusals (:orders/remind ready))))
+    (is (= #{:order/archived :groundwork-access/signed-out :groundwork-access/not-found :groundwork-access/not-allowed :groundwork-access/token-refused}
+           (set (keys (:refusals (:orders/one ready)))))
         "beside the handler's own"))
   (let [problems (try (access/put-access-into-handlers
                        {:x/y (dissoc (:orders/remind handlers) :refusals)
@@ -157,7 +159,8 @@
 
 (deftest the-browser-s-shapes-get-access-s-reasons-too
   (is (= {:orders/one {:params-shape nil :answer-shape nil
-                       :refusals {:order/archived nil :groundwork-access/signed-out nil :groundwork-access/not-found nil :groundwork-access/not-allowed nil}}}
+                       :refusals {:order/archived nil :groundwork-access/signed-out nil :groundwork-access/not-found nil :groundwork-access/not-allowed nil
+                                  :groundwork-access/token-refused nil}}}
          (shapes/put-refusals-into-shapes {:orders/one {:params-shape nil :answer-shape nil :refusals {:order/archived nil}}}))
       "groundwork-access.api's .cljs half hands this on")
   (is (= :groundwork-access/bad-shapes
@@ -188,7 +191,7 @@
     (let [pool   (test-settings/start-pool! (System/getenv "ACCESS_TEST_USER") 4)
           ready  (access/put-access-into-handlers handlers {:pool pool :tables [shops orders] :scope-kinds scope-kinds
                                                             :find-session-step (access/make-find-session-step pool settings)})
-          cookie #(first (str/split (:set-cookie (access/sign-in! pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
+          cookie #(first (str/split (:set-cookie (access/sign-in! pool {:headers {}} % {:settings settings :tables [] :session-flags #{} :session-lasts :session-days :outside-subjects {}})) #";"))]
       (try
         (make-database! pool)
         (let [anna-cookie (cookie anna)]

@@ -56,7 +56,7 @@
 (def ^:private order-99 #uuid "99000000-0000-4000-8000-000000000099")
 
 (def ^:private settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60 :allowed-origin "http://app.test" :secure-cookie? false
-                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30})
+                         :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []})
 
 (def ^:private find-all-orders (postgres/make-query-from-sql-text "all orders, no WHERE" "SELECT order__id FROM orders ORDER BY order__id"))
 (def ^:private insert-order (postgres/make-query-from-sql-text "insert order" "INSERT INTO orders (order__shop_id) VALUES (param('order/shop-id'))"))
@@ -85,7 +85,7 @@
 (defn- make-database! [owner-pool]
   (run-sql! owner-pool "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS groundwork_access CASCADE; DROP SCHEMA IF EXISTS groundwork_postgres CASCADE")
   (run-sql! owner-pool "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'groundwork_access_app') THEN CREATE ROLE groundwork_access_app LOGIN; END IF; END $$")
-  (let [tables (into (access/put-gates-on-tables [shops orders] scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table))]
+  (let [tables (into (access/put-gates-on-tables [shops orders] scope-kinds) (conj access/access-tables access/sessions-table access/tokens-table access/outside-subjects-table))]
     ;; groundwork-access's made functions declared with its files: groundwork-postgres makes them before the gates that call them
     (with-out-str @(:slow-part (postgres/migrate! owner-pool (test-settings/declare-tables-and-access tables [shops orders] scope-kinds) [] test-settings/migrate-options)))
     (postgres/grant-tables-to-role! owner-pool tables "groundwork_access_app"))
@@ -121,7 +121,7 @@
       (let [app-pool (start-pool! "groundwork_access_app")
             ready    (access/put-access-into-handlers handlers {:pool app-pool :tables [shops orders] :scope-kinds scope-kinds
                                                                 :find-session-step (access/make-find-session-step app-pool settings)})
-            cookie   #(first (str/split (:set-cookie (access/sign-in! app-pool {:headers {}} % {:settings settings :tables [] :session-flags #{}})) #";"))]
+            cookie   #(first (str/split (:set-cookie (access/sign-in! app-pool {:headers {}} % {:settings settings :tables [] :session-flags #{} :session-lasts :session-days :outside-subjects {}})) #";"))]
         (try
           (testing "the app's own role, which owns nothing, signs in and out, and the functions answer it"
             (let [request {:request-method :post :headers {"origin" "http://app.test" "cookie" (cookie anna)}}
@@ -138,7 +138,7 @@
                   "outside a message, nobody is asking")
               (cookie bob)
               (cookie bob)
-              (is (= {:sessions 2 :tokens 0} (access/sign-out-everywhere! app-pool bob)))))
+              (is (= {:sessions 2 :tokens 0 :outside-subjects 0} (access/sign-out-everywhere! app-pool bob)))))
           (testing "a query with no WHERE: Postgres returns only the asker's rows"
             (is (= (str "{\"orders/all\":[\"" order-42 "\"]}") (ask ready (cookie anna) "{\"orders/all\":{}}")))
             (is (= (str "{\"orders/all\":[\"" order-99 "\"]}") (ask ready (cookie bob) "{\"orders/all\":{}}")))

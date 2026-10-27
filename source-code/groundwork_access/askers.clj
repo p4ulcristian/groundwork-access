@@ -153,21 +153,23 @@
     found))
 
 (defn run-as-asker-of-request!
-  "Runs (f transaction) in one transaction of its own, as the asker of the
-   request, found in it: the lookup is its first statement, on the same
-   connection. Opened read-write, so a session seen again is pushed out in
-   it; read-only? true, it is made read-only before f, in the statement
-   that tells Postgres who asks. A transaction handed in is refused: who
-   asks would change under its other statements."
+  "Runs (f transaction asker) in one transaction of its own, as the asker
+   of the request, found in it: the lookup is its first statement, on the
+   same connection, and the only one; f gets what it found, {:person-id
+   :visitor-id :session-flags :token-id :outside-issuer}. Opened
+   read-write, so a session seen again is pushed out in it; read-only?
+   true, it is made read-only before f, in the statement that tells
+   Postgres who asks. A transaction handed in is refused: who asks would
+   change under its other statements."
   [pool request {:keys [settings read-only? scope-kinds log]} f]
   (when (postgres/is-transaction? pool)
     (throw (ex-info "run-as-asker-of-request! runs in a transaction of its own: hand it the pool"
                     {:type :groundwork-access/asker-in-a-transaction})))
   (postgres/run-in-transaction! pool {:read-only? false :log log}
                               (fn [transaction]
-                                (let [{:keys [asker]} (find-asker-or-throw transaction request settings)]
+                                (let [{:keys [asker token-id outside-issuer]} (find-asker-or-throw transaction request settings)]
                                   (asking/set-asking-with-every-action! transaction scope-kinds asker read-only?)
-                                  (f transaction)))))
+                                  (f transaction (assoc asker :token-id token-id :outside-issuer outside-issuer))))))
 
 (defn make-token! [pool request {:keys [settings] :as options}]
   (let [{{:keys [person-id session-flags]} :asker :keys [token-id outside-issuer]} (find-asker-or-throw pool request settings)]

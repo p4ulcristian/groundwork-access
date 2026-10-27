@@ -283,8 +283,9 @@
 
           (testing "a suspended shop's own row is frozen for its own kind's actions"
             (let [shop-c-row #(first (postgres/find-rows owner-pool (query (str "SELECT shop__name, shop__status FROM shops WHERE shop__id = '" shop-c "'")) {}))
-                  as-paul    #(access/run-as-asker-of-request! app-pool (request paul)
-                                                                 {:settings settings :read-only? false :scope-kinds scope-kinds :log nil} %)]
+                  as-paul    (fn [f] (access/run-as-asker-of-request! app-pool (request paul)
+                                                                       {:settings settings :read-only? false :scope-kinds scope-kinds :log nil}
+                                                                       (fn [transaction _asker] (f transaction))))]
               (is (= (refusal :groundwork-access/not-allowed) (ask paul :shops/rename {:shop/id shop-c})) "the check: the Owner can't change its settings")
               (is (= 0 (as-paul #(postgres/run-statement! % (query (str "UPDATE shops SET shop__status = 'open' WHERE shop__id = '" shop-c "'")) {})))
                   "the gate: nor lift the suspension")

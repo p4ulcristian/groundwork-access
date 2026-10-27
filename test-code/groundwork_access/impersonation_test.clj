@@ -156,7 +156,7 @@
             (is (= (refusal :groundwork-steps/failed) (ask acting-as :orders/sneak {:order/id order-1 :message/shop-id shop-a})))
             (let [send-as! (fn [request]
                              (try (access/run-as-asker-of-request! app-pool request {:settings settings :read-only? false :scope-kinds scope-kinds :log log}
-                                                                   #(postgres/run-statement! % insert-message {:message/shop-id shop-a}))
+                                                                   (fn [transaction _asker] (postgres/run-statement! transaction insert-message {:message/shop-id shop-a})))
                                   (catch Exception _ :refused)))]
               (is (= :refused (send-as! acting-as)) "the deny is in the gate's condition")
               (is (= 1 (messages-n)))

@@ -401,11 +401,16 @@
             (is (= :outside-token (:reason (refusal-of #(access/make-token! app-pool (bearer good) {:settings settings :name "x" :ends-at (.plus (Instant/now) (Duration/ofDays 1))})))))
             (is (= [{:order/shop-id shop-a}]
                    (access/run-as-asker-of-request! app-pool (bearer good) {:settings settings :read-only? true :scope-kinds scope-kinds :log log}
-                                                    #(postgres/find-rows % (query "SELECT order__shop_id FROM orders") {}))))
+                                                    (fn [transaction _asker] (postgres/find-rows transaction (query "SELECT order__shop_id FROM orders") {})))))
+            (is (= [nil :stand-in]
+                   ((juxt :token-id :outside-issuer)
+                    (access/run-as-asker-of-request! app-pool (bearer good) {:settings settings :read-only? true :scope-kinds scope-kinds :log log}
+                                                      (fn [_transaction asker] asker))))
+                "f is handed the asker, with the issuer it came by")
             (is (= {:type :groundwork-access/refused-request :reason :groundwork-access/token-refused :problem :wrong-audience :issuer-name :stand-in}
                    (refusal-of #(access/run-as-asker-of-request! app-pool (bearer (make-token "RS256" rsa {"kid" "rsa-1"} (assoc claims "aud" "x")))
                                                                  {:settings settings :read-only? true :scope-kinds scope-kinds :log log}
-                                                                 (fn [_] nil))))))
+                                                                 (fn [_ _] nil))))))
 
           (testing "signing out everywhere unlinks her subject: her outside tokens are refused at once"
             (is (= 1 (:outside-subjects (access/sign-out-everywhere! app-pool anna))))

@@ -156,13 +156,20 @@
                 "Anna may edit shop 7's orders, but orders/see only reads"))
           (testing "run-as-asker-of-request!: a transaction as the request's asker, outside a message, held by the same gates"
             (let [as (fn [request read-only? f]
-                       (access/run-as-asker-of-request! app-pool request {:settings settings :read-only? read-only? :scope-kinds scope-kinds :log nil} f))
+                       (access/run-as-asker-of-request! app-pool request {:settings settings :read-only? read-only? :scope-kinds scope-kinds :log nil}
+                                                         (fn [transaction _asker] (f transaction))))
                   anna-request {:request-method :get :headers {"cookie" (cookie anna)}}]
               (let [seen (set (as anna-request true #(mapv :order/id (postgres/find-rows % find-all-orders {}))))]
                 (is (contains? seen order-42) "her shop's order")
                 (is (not (contains? seen order-99)) "not shop 9's"))
               (is (= [] (as {:request-method :get :headers {}} true #(mapv :order/id (postgres/find-rows % find-all-orders {}))))
                   "nobody: no rows")
+              (is (= [{:person-id anna :visitor-id nil :session-flags #{} :token-id nil :outside-issuer nil}
+                      {:person-id nil :visitor-id nil :session-flags #{} :token-id nil :outside-issuer nil}]
+                     (map #(access/run-as-asker-of-request! app-pool % {:settings settings :read-only? true :scope-kinds scope-kinds :log nil}
+                                                             (fn [_transaction asker] asker))
+                          [anna-request {:request-method :get :headers {}}]))
+                  "f is handed the asker it found, once: Anna by her cookie, then nobody")
               (is (thrown? Exception (as anna-request false #(postgres/run-statement! % insert-order {:order/shop-id shop-9})))
                   "a row in another shop is refused")
               (is (thrown? Exception (as anna-request true #(postgres/run-statement! % insert-order {:order/shop-id shop-7})))

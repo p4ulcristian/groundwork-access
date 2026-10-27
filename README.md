@@ -54,7 +54,7 @@ step's lines say who asked
 | who | `start-visitor-session!` | a session for a visitor, on the app's own route: its id, which the rows kept for them name, and the Set-Cookie text |
 | who | `delete-ended-sessions!` | forgets ended sessions; for a nightly background job |
 | who | `make-find-session-step` | the step first in a handler: who asks, by a bearer token (no Origin check; no session flags), an outside issuer's token (checked by its keys; a failed check `:groundwork-access/token-refused`) or the session cookie (the Origin checked), a cookie and a token at once refused; `:groundwork-access/person-id`, `:groundwork-access/visitor-id`, `:groundwork-access/session-flags`, `:groundwork-access/token-id` and `:groundwork-access/outside-issuer` in the context ([why](decisions/2026-10-27-a-handler-sees-which-token-asked.md)), the person (and token or issuer) or visitor in `:groundwork-steps/log`; in a handler, looked up in the question's own transaction, its first statement ([why](decisions/2026-10-27-the-session-is-looked-up-in-the-questions-own-transaction.md)) |
-| who | `run-as-asker-of-request!` | `(f transaction)` as the asker groundwork-access finds in a request, by the step's rules, outside a message (the app's own route, a page), looked up in that transaction: held by the gates as a message's steps are |
+| who | `run-as-asker-of-request!` | `(f transaction asker)` as the asker groundwork-access finds in a request, by the step's rules, outside a message (the app's own route, a page), looked up once in that transaction and handed to `f` (`{:person-id :visitor-id :session-flags :token-id :outside-issuer}`): held by the gates as a message's steps are ([why](decisions/2026-10-27-run-as-asker-of-request-hands-f-the-asker-it-found.md)) |
 | who | `find-session-key-of-request` | a hash of the request's token, else its session cookie, for rate limits |
 | what | `access-tables` | its tables, `groundwork_access.scopes` `groundwork_access.roles` `groundwork_access.role_actions` `groundwork-access.memberships` `groundwork_access.membership_roles` |
 | what | `access-move-from-v0-7` | a database of v0.7 (a role was its name, a member held one) brought to `access-tables` with its rows, by two `postgres/migrate!` runs: `:old-tables` and `:renames`, then `:copy-and-drops` ([why](decisions/2026-10-23-roles-have-ids-and-a-member-holds-a-set-of-roles.md)) |
@@ -242,9 +242,11 @@ The text in the SQL the sentences make is quoted by groundwork-postgres's
 (access/list-tokens app-pool request settings)              ;=> [{:token-id … :name "catalog script" :shown-start "shop_q3V9xK" …}]
 (access/revoke-token! app-pool request settings token-id)   ;=> true
 
-;; a page reading rows as whoever asks (its cookie, or a token), held by the gates
+;; a page reading rows as whoever asks (its cookie, or a token), held by the gates;
+;; f is handed who that is, found once, in the transaction
 (access/run-as-asker-of-request! app-pool request {:settings settings :read-only? true :scope-kinds scope-kinds :log log}
-                                  (fn [transaction] (postgres/find-rows transaction list-orders {})))
+                                  (fn [transaction {:keys [person-id]}]
+                                    (if person-id (postgres/find-rows transaction list-orders {}) :to-login)))
 
 ;; in the REPL: why would Anna's message be refused?
 (access/explain-refusal {:pool app-pool :handlers handlers :tables app-tables :scope-kinds scope-kinds}

@@ -14,12 +14,13 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [sessions v1: signed-in sessions, a step to find them](2026-10-22-sessions-v1.md), changed in part by [The session cookie is read by RFC 6265's grammar](2026-10-27-the-session-cookie-is-read-by-rfc-6265s-grammar.md), [doorman is its own library](2026-10-22-doorman-is-its-own-library.md), [The session step adds the person to the message's log](2026-10-22-the-session-step-adds-the-person-to-the-log.md), [Visitors get sessions of their own](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md), [doorman owns a person's tokens](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) and [sign-in! takes the session's lifetime](2026-10-27-sign-in-takes-the-sessions-lifetime.md)
 - [Visitors get sessions of their own, and their rows move to the person at sign-in](2026-10-23-visitors-get-sessions-and-their-rows-move-at-sign-in.md)
 - [doorman.sessions of v0.6 becomes v0.7's by cellar's plan alone](2026-10-23-doorman-sessions-of-v0-6-becomes-v0-7s-by-cellars-plan-alone.md)
-- [The session is looked up in the question's own transaction](2026-10-27-the-session-is-looked-up-in-the-questions-own-transaction.md) (v0.8.0)
+- [The session is looked up in the question's own transaction](2026-10-27-the-session-is-looked-up-in-the-questions-own-transaction.md) (v0.8.0), changed in part by [run-as-asker-of-request! hands f the asker it found](2026-10-27-run-as-asker-of-request-hands-f-the-asker-it-found.md)
 - [sign-in! takes the session's lifetime](2026-10-27-sign-in-takes-the-sessions-lifetime.md) (v0.8.0)
 - [A handler sees which token asked](2026-10-27-a-handler-sees-which-token-asked.md) (v0.8.0)
 - [groundwork-access trusts outside issuers the app names](2026-10-27-groundwork-access-trusts-outside-issuers-the-app-names.md) (v0.8.0), changed in part by [An outside issuer's token is checked by nimbus-jose-jwt](2026-10-27-an-outside-issuers-token-is-checked-by-nimbus-jose-jwt.md)
 - [An outside issuer's token is checked by nimbus-jose-jwt; the policy stays groundwork-access's](2026-10-27-an-outside-issuers-token-is-checked-by-nimbus-jose-jwt.md) (v0.8.1)
 - [The session cookie is read by RFC 6265's grammar](2026-10-27-the-session-cookie-is-read-by-rfc-6265s-grammar.md) (v0.8.2)
+- [run-as-asker-of-request! hands f the asker it found](2026-10-27-run-as-asker-of-request-hands-f-the-asker-it-found.md) (v0.8.3)
 
 ## What may they do
 

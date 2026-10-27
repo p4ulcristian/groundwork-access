@@ -141,7 +141,7 @@
           (testing "a scope's state deny by [:some …]: shop C has a suspension date, so it is frozen"
             (is (= (refusal :groundwork-access/not-allowed) (ask anna :parts/price {:part/id part-c})) "the check")
             (is (= 0 (access/run-as-asker-of-request! app-pool (request anna) {:settings settings :read-only? false :scope-kinds scope-kinds :log nil}
-                                                       #(postgres/run-statement! % (query (str "UPDATE parts SET part__pricing = 1 WHERE part__id = '" part-c "'")) {})))
+                                                       (fn [transaction _asker] (postgres/run-statement! transaction (query (str "UPDATE parts SET part__pricing = 1 WHERE part__id = '" part-c "'")) {}))))
                 "the gate")
             (run-sql! owner-pool (str "UPDATE shops SET shop__suspended_at = NULL WHERE shop__id = '" shop-c "'"))
             (is (= {:count 1} (ask anna :parts/price {:part/id part-c})) "the date cleared, she writes again"))

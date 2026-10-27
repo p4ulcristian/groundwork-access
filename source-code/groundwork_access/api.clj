@@ -838,7 +838,7 @@
   (system/run-as-system! pool system-name (settings/check-system-options options) f))
 
 (defn run-as-asker-of-request!
-  "Runs (f transaction) in one transaction of its own, as the asker
+  "Runs (f transaction asker) in one transaction of its own, as the asker
    groundwork-access finds in the request, by the find-session step's rules (its
    token, else its cookie and the Origin): code on the app's own route (a
    page that reads rows) held by the gates by the person's scopes and
@@ -850,12 +850,16 @@
    checked scope kinds; :log the caller's, the request's with its request
    id, which the transaction carries for groundwork-postgres's run-after-commit!, or
    nil for one that keeps no work). The asker is looked up in that
-   transaction, its first statement; it is opened read-write (a session
-   seen again is pushed out in it) and, :read-only? true, made read-only
-   before f. A transaction handed in is refused.
+   transaction, its first statement, once: f is handed what was found,
+   {:person-id :visitor-id :session-flags :token-id :outside-issuer} (nils
+   and #{} for nobody), so a caller that also needs to know who asks (a
+   page deciding to redirect) looks nobody up again. It is opened
+   read-write (a session seen again is pushed out in it) and, :read-only?
+   true, made read-only before f. A transaction handed in is refused.
 
      (access/run-as-asker-of-request! pool request {:settings settings :read-only? true :scope-kinds scope-kinds :log log}
-                                       (fn [transaction] (postgres/find-rows transaction list-orders {})))"
+                                       (fn [transaction {:keys [person-id]}]
+                                         (when person-id (postgres/find-rows transaction list-orders {}))))"
   [pool request options f]
   (askers/run-as-asker-of-request! pool request (settings/check-asker-run-options options) f))
 

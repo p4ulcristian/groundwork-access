@@ -1,5 +1,7 @@
 # The session is looked up in the question's own transaction
 
+> **Changed in part** by [run-as-asker-of-request! hands f the asker it found](2026-10-27-run-as-asker-of-request-hands-f-the-asker-it-found.md) (2026-10-27): `run-as-asker-of-request!` calls `(f transaction asker)`.
+
 > The user's decision, 2026-10-27 (the switch of Iron Rainbow onto groundwork-3, decision 3: one question per POST; the session lookup joins the question's own transaction). Since v0.8.0. Changes in part [access, piece 3: the check](2026-10-22-access-piece-3-the-check.md), ["What may I do?" is a handler for the browser](2026-10-23-what-may-i-do-is-a-handler-for-the-browser.md) and [doorman owns a person's tokens](2026-10-23-doorman-owns-tokens-and-only-sign-in-names-a-person.md) (`run-as-asker-of-request!`).
 
 **What was wrong:** a handler's question went to Postgres twice: the find-session step looked the session (or token) up on the pool, a checkout of its own, and then the check's transaction took a second connection. Two pool checkouts per question, three when the session was pushed out (its own autocommit `UPDATE`).

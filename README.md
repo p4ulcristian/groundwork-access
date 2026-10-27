@@ -94,6 +94,13 @@ groundwork-access adds the four to every handler it wraps; the app never writes
 them. In the browser, `access/put-refusals-into-shapes` adds them to the
 app's shapes by name. Each needs its text in the app's catalogs.
 
+The session cookie is read by RFC 6265's grammar: a quoted value without
+its quotes, a pair that isn't one (no `=`, a space or a comma in its value)
+left out and the rest read, a name twice its first with a value, an empty
+one none ([why](decisions/2026-10-27-the-session-cookie-is-read-by-rfc-6265s-grammar.md)).
+The text in the SQL the sentences make is quoted by groundwork-postgres's
+`quote-text`, PgJDBC's ([why](decisions/2026-10-27-a-sentences-text-in-sql-is-quoted-by-groundwork-postgres.md)).
+
 ```clojure
 (require '[groundwork-access.api :as access]
          '[groundwork-postgres.api :as postgres])

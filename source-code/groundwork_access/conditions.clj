@@ -285,7 +285,7 @@
    own row on the kind's table among them."
   [{:keys [kind session] :as deny} table {:keys [tables-by-key scope-kinds]}]
   (if session
-    (str "NOT (SELECT groundwork_access.has_session_flag(" (sentences/quote-text (name session)) "))")
+    (str "NOT (SELECT groundwork_access.has_session_flag(" (postgres/quote-text (name session)) "))")
     (when-let [columns (seq (distinct (concat (sentences/find-columns-naming-kind table kind tables-by-key scope-kinds)
                                               ;; the scope's own row (the shop in shops) is frozen too
                                               (for [column (sentences/find-primary-key-columns table)
@@ -391,7 +391,7 @@
                              system (join-sentences-with-or (filter sentences/is-system-sentence? all) action place)]
                          (when (or people system)
                            (join-with-or (remove nil? [(when people (str "((SELECT groundwork_access.is_acting("
-                                                                         (sentences/quote-text (sentences/turn-keyword-into-text action))
+                                                                         (postgres/quote-text (sentences/turn-keyword-into-text action))
                                                                          ")) AND (" (add-denies people action op table place) "))"))
                                                        system])))))
         for-op       (fn [op] (join-actions-with-or (for [action (sort-by str actions)

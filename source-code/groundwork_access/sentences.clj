@@ -40,14 +40,12 @@
    [clojure.string :as str]
    [groundwork-postgres.api :as postgres]))
 
-(defn quote-text [s] (str "'" (str/replace (str s) "'" "''") "'"))
-
 (defn turn-keyword-into-text [k] (subs (str k) 1))
 
 (defn- turn-value-into-sql [value]
-  (cond (string? value)  (quote-text value)
-        (keyword? value) (quote-text (turn-keyword-into-text value))
-        (uuid? value)    (str (quote-text value) "::uuid")
+  (cond (string? value)  (postgres/quote-text value)
+        (keyword? value) (postgres/quote-text (turn-keyword-into-text value))
+        (uuid? value)    (str (postgres/quote-text value) "::uuid")
         :else            (str value)))
 
 (defn column-name [column-key] (postgres/turn-key-into-column-name column-key))
@@ -152,13 +150,13 @@
     (= :signed-in to) "(SELECT groundwork_access.find_asking_person()) IS NOT NULL"
     (= :member (first to))
     (let [[_ x] to
-          held  (quote-text (turn-keyword-into-text (find-held-action to action)))]
+          held  (postgres/quote-text (turn-keyword-into-text (find-held-action to action)))]
       (if (is-column-word? x)
         (let [kind (find-scope-kind-of-column table x tables-by-key scope-kinds)]
-          (str (column-name x) " = ANY ((SELECT groundwork_access.find_scopes_holding(" (quote-text (name kind)) ", " held "))::uuid[])"))
-        (str "cardinality((SELECT groundwork_access.find_scopes_holding(" (quote-text (name x)) ", " held "))::uuid[]) > 0")))
+          (str (column-name x) " = ANY ((SELECT groundwork_access.find_scopes_holding(" (postgres/quote-text (name kind)) ", " held "))::uuid[])"))
+        (str "cardinality((SELECT groundwork_access.find_scopes_holding(" (postgres/quote-text (name x)) ", " held "))::uuid[]) > 0")))
     (= :system (first to))
-    (str "(SELECT groundwork_access.find_asking_system()) = " (quote-text (name (second to))))
+    (str "(SELECT groundwork_access.find_asking_system()) = " (postgres/quote-text (name (second to))))
     (= :me (first to))
     (str (column-name (second to))
          (if (= (second to) (find-visitor-column table))

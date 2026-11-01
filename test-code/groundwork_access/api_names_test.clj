@@ -13,7 +13,7 @@
            ;; what may they do
            access-tables access-move-from-v0-7 check-scope-kinds does-action-only-read? add-scope!
            add-role! rename-role! set-role-actions! remove-role! list-roles
-           add-membership! set-membership-roles! remove-membership!
+           add-membership! set-membership-roles! remove-membership! remove-scope!
            list-actions-of-person make-sql-conditions make-access-functions function-files
            put-access-into-handlers put-gates-on-tables find-leaks explain-refusal
            find-views-past-the-gates check-views

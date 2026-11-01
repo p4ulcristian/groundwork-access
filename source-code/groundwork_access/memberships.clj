@@ -36,6 +36,12 @@
 (def ^:private find-actions-of-person        (make-query "find_actions_of_person.sql"))
 (def ^:private find-scopes-below-memberships (make-query "find_scopes_below_memberships.sql"))
 (def ^:private find-memberships-above        (make-query "find_memberships_above.sql"))
+(def ^:private count-scopes-below            (make-query "count_scopes_below.sql"))
+(def ^:private delete-membership-roles-of-scope (make-query "delete_membership_roles_of_scope.sql"))
+(def ^:private delete-memberships-of-scope   (make-query "delete_memberships_of_scope.sql"))
+(def ^:private delete-role-actions-of-scope  (make-query "delete_role_actions_of_scope.sql"))
+(def ^:private delete-roles-of-scope         (make-query "delete_roles_of_scope.sql"))
+(def ^:private delete-scope                  (make-query "delete_scope.sql"))
 
 (defn- turn-keyword-into-text [k] (subs (str k) 1))
 
@@ -205,6 +211,18 @@
                          [role-name (insert-role! transaction scope role-name actions)]))]
     (add-membership! transaction scope founder-id #{owner-id})
     role-ids))
+
+(defn remove-scope! [transaction [kind scope-id :as scope]]
+  (lock-roles! transaction scope)
+  (let [below (:scope/below (postgres/find-one-row transaction count-scopes-below {:scope/kind (name kind) :scope/id scope-id}))]
+    (when (pos? below)
+      (refuse (str "The scope has " below " scope" (when (< 1 below) "s") " under it; remove those first")
+              {:type :groundwork-access/scope-has-scopes-below :scope scope :below below})))
+  (postgres/run-statement! transaction delete-membership-roles-of-scope {:membership-role/scope-kind (name kind) :membership-role/scope-id scope-id})
+  (postgres/run-statement! transaction delete-memberships-of-scope {:membership/scope-kind (name kind) :membership/scope-id scope-id})
+  (postgres/run-statement! transaction delete-role-actions-of-scope {:role/scope-kind (name kind) :role/scope-id scope-id})
+  (postgres/run-statement! transaction delete-roles-of-scope {:role/scope-kind (name kind) :role/scope-id scope-id})
+  (pos? (postgres/run-statement! transaction delete-scope {:scope/kind (name kind) :scope/id scope-id})))
 
 (defn remove-membership! [transaction [kind scope-id] person-id]
   (postgres/run-statement! transaction delete-membership-roles {:membership-role/person-id person-id :membership-role/scope-kind (name kind)

@@ -17,6 +17,16 @@
            :roles   {"Staff" #{:orders/see :orders/edit} "Bookkeeper" #{:orders/see}}
            :parent nil :single? false :denies []}}))
 
+(def ^:private kinds-with-a-parent
+  (access/check-scope-kinds
+   {:company {:table :companies :actions {:company/report #{:read}} :roles {}
+              :parent nil :single? false :denies []}
+    :shop    {:table :shops :actions {:orders/see #{:read}} :roles {}
+              :parent :company :single? false :denies []}}))
+
+(def ^:private company-1 #uuid "c0000000-0000-4000-8000-000000000001")
+(def ^:private shop-8 #uuid "80000000-0000-4000-8000-000000000008")
+
 (def ^:private paul #uuid "00000000-0000-4000-8000-00000000000a")
 (def ^:private anna #uuid "00000000-0000-4000-8000-00000000000b")
 (def ^:private dora #uuid "00000000-0000-4000-8000-00000000000c")
@@ -64,4 +74,32 @@
         (testing "leaving a scope"
           (is (true? (access/remove-membership! pool [:shop shop-7] dora)))
           (is (= {} (access/list-actions-of-person pool scope-kinds dora))))
+        (testing "a scope removed takes its memberships, roles and row with it"
+          (let [count-of (fn [table column]
+                           (:rows/count (postgres/find-one-row pool (postgres/make-query-from-sql-text
+                                                                     "test count"
+                                                                     (str "SELECT count(*) AS rows__count FROM groundwork_access." table
+                                                                          " WHERE " column " = param('id')"))
+                                                               {:id shop-7})))]
+            (is (true? (postgres/run-in-transaction! pool {:read-only? false :log nil}
+                         #(access/remove-scope! % [:shop shop-7]))))
+            (is (= {} (access/list-actions-of-person pool scope-kinds paul)) "the founder too")
+            (is (= {} (access/list-actions-of-person pool scope-kinds anna)))
+            (is (= {} (access/list-actions-of-person pool scope-kinds bob)))
+            (is (= [0 0 0 0] [(count-of "scopes" "scope__id") (count-of "roles" "role__scope_id")
+                              (count-of "memberships" "membership__scope_id") (count-of "membership_roles" "membership_role__scope_id")]))
+            (is (false? (access/remove-scope! pool [:shop shop-7])) "a second time: there was none")))
+        (testing "a scope with scopes under it is refused until those are removed"
+          (postgres/run-in-transaction! pool {:read-only? false :log nil}
+            (fn [transaction]
+              (access/add-scope! transaction kinds-with-a-parent :company company-1 paul nil)
+              (access/add-scope! transaction kinds-with-a-parent :shop shop-8 anna company-1)))
+          (let [refused (try (access/remove-scope! pool [:company company-1]) nil
+                             (catch clojure.lang.ExceptionInfo e (ex-data e)))]
+            (is (= {:type :groundwork-access/scope-has-scopes-below :scope [:company company-1] :below 1} refused)))
+          (is (= #{[:company company-1] [:shop shop-8]} (set (keys (access/list-actions-of-person pool kinds-with-a-parent paul))))
+              "nothing went")
+          (is (true? (access/remove-scope! pool [:shop shop-8])))
+          (is (true? (access/remove-scope! pool [:company company-1])))
+          (is (= {} (access/list-actions-of-person pool kinds-with-a-parent paul))))
         (finally (postgres/stop-pool! pool))))))

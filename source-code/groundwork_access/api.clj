@@ -543,6 +543,18 @@
   [transaction scope-kinds kind scope-id founder-id parent-id]
   (memberships/add-scope! transaction scope-kinds kind scope-id founder-id parent-id))
 
+(defn remove-scope!
+  "Removes a scope with everything groundwork-access keeps of it: its
+   memberships and the roles they hold, its roles (Owner too) and their
+   actions, and its row; call it in the transaction that deletes the app's
+   own row. Refused (throws) while scopes sit under it:
+   :groundwork-access/scope-has-scopes-below ({:scope :below n} in its
+   data; remove those first). Whether there was such a scope.
+
+     (access/remove-scope! transaction [:shop shop-id])"
+  [transaction scope]
+  (memberships/remove-scope! transaction scope))
+
 (defn remove-membership!
   "Takes a person out of a scope, with the roles they held there. Whether
    they were in it."

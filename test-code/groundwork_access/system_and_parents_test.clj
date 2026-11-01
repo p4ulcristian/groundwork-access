@@ -26,9 +26,11 @@
   (access/check-scope-kinds
    {:shop {:table :shops :parent nil :single? false
            :actions {:orders/see #{:read} :orders/edit #{:read :insert :update}
-                     :jobs/see #{:read} :jobs/edit #{:read :insert :update}
+                     :jobs/see #{:read} :jobs/edit #{:read :insert :update} :jobs/mine #{:read}
                      :shop-emails/see #{:read} :shop-emails/mark-bounced #{:read :update}}
-           :roles   {"Staff" #{:orders/see :orders/edit :jobs/see :jobs/edit :shop-emails/see}}
+           :roles   {"Staff" #{:orders/see :orders/edit :jobs/see :jobs/edit :shop-emails/see}
+                     ;; changes orders, never sees or writes a job
+                     "Clerk" #{:orders/see :orders/edit}}
            :denies  [{:deny :writes :when [:= :shop/status "suspended"]}]}}))
 
 (def ^:private shops
@@ -38,7 +40,9 @@
 (def ^:private orders
   {:table      :orders
    :columns    [[:order/id :uuid {:primary-key? true}]
-                [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
+                [:order/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
+                ;; a guest's order has none, until she claims it
+                [:order/customer-id :uuid {:optional? true}]]
    :indexes    [{:columns [[:order/shop-id :ascending :nulls-last]]
                  :method :btree :ops {} :unique? false :where nil}]
    :uniques    []
@@ -53,7 +57,8 @@
    :columns    [[:job/id :uuid {:primary-key? true :default :random-uuid}]
                 ;; a job goes with its order; a photo keeps its job (photo/job-id refuses, at the commit)
                 [:job/order-id :uuid {:references {:to :order/id :on-delete :cascade :on-update :refuse :checked-at :statement}}]
-                [:job/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
+                [:job/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
+                [:job/customer-id :uuid {:optional? true}]]
    :indexes    [{:columns [[:job/order-id :ascending :nulls-last]]
                  :method :btree :ops {} :unique? false :where nil}
                 {:columns [[:job/shop-id :ascending :nulls-last]]
@@ -63,8 +68,9 @@
    :references []
    :triggers   []
    :on-change  nil
-   :parent     {:column :job/order-id :carries {:job/shop-id :order/shop-id}}
-   :access     [{:allow #{:jobs/see :jobs/edit} :only :all-of-the-action :to [:member :job/shop-id]}]})
+   :parent     {:column :job/order-id :carries {:job/shop-id :order/shop-id} :carries-optional {:job/customer-id :order/customer-id}}
+   :access     [{:allow #{:jobs/see :jobs/edit} :only :all-of-the-action :to [:member :job/shop-id]}
+                {:allow :jobs/mine :only :all-of-the-action :to [:me :job/customer-id]}]})
 
 (def ^:private photos
   {:table      :photos
@@ -106,6 +112,9 @@
 (def ^:private shop-9 (id 9009))
 (def ^:private anna (id 2)) ; Staff in shop 7
 (def ^:private mia (id 3))  ; Staff in shops 7 and 9
+(def ^:private carl (id 4)) ; Clerk in shop 7: changes its orders, sees no job
+(def ^:private kim (id 5))  ; a customer, of no shop
+(def ^:private vic (id 6))  ; another
 (def ^:private order-42 (id 42)) ; shop 7
 (def ^:private order-99 (id 99)) ; shop 9
 (def ^:private email-7 (id 707))
@@ -142,8 +151,9 @@
                                   (access/add-scope! transaction scope-kinds :shop shop (id 1) nil))
                                 (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"})
                                 (add-member! transaction scope-kinds [:shop shop-7] mia #{"Staff"})
-                                (add-member! transaction scope-kinds [:shop shop-9] mia #{"Staff"})))
-  (run-sql! super-pool (str "INSERT INTO orders VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
+                                (add-member! transaction scope-kinds [:shop shop-9] mia #{"Staff"})
+                                (add-member! transaction scope-kinds [:shop shop-7] carl #{"Clerk"})))
+  (run-sql! super-pool (str "INSERT INTO orders (order__id, order__shop_id) VALUES ('" order-42 "', '" shop-7 "'), ('" order-99 "', '" shop-9 "')"))
   (run-sql! super-pool (str "INSERT INTO shop_emails (shop_email__id, shop_email__shop_id, shop_email__address) VALUES "
                             "('" email-7 "', '" shop-7 "', 'seven@shop.test'), ('" email-8 "', '" shop-8 "', 'eight@shop.test')")))
 
@@ -196,6 +206,14 @@
   (testing "the parent column's delete is one the link can follow; the map doesn't say the link itself"
     (is (some #(re-find #":parent's column :job/order-id says :on-delete :set-null; the link to the parent deletes as" %)
               (problems [shops orders (assoc-in jobs [:columns 1 2 :references :on-delete] :set-null)])))
+    (is (some #(re-find #":job/customer-id is NOT NULL, but :order/customer-id may be empty" %)
+              (problems [shops orders (assoc-in jobs [:columns 3] [:job/customer-id :uuid])])))
+    (is (some #(re-find #":parent carries :job/shop-id both ways" %)
+              (problems [shops orders (assoc-in jobs [:parent :carries-optional] {:job/shop-id :order/shop-id})])))
+    (is (some #(re-find #":job/customer-id and :order/customer-id are of different types" %)
+              (problems [shops orders (assoc-in jobs [:columns 3] [:job/customer-id :string {:optional? true}])])))
+    (is (some #(re-find #":parent is \{:column" %)
+              (problems [shops orders (assoc-in jobs [:parent :carries-optional] {})])))
     (is (some #(re-find #"its :references say the link to the parent over \[:job/shop-id :job/order-id\].*leave it out" %)
               (problems [shops orders (assoc jobs :references [{:columns [:job/shop-id :job/order-id] :to [:order/shop-id :order/id]
                                                                 :on-delete :cascade :on-update :cascade :checked-at :statement}])]))))
@@ -217,7 +235,14 @@
       (is (= [:before #{:insert :update} [:job/order-id] :row nil]
              ((juxt :timing :events :update-of :for-each :when) (first (get-in ready [:jobs :triggers]))))
           "called for every row: the fill itself skips a row with no parent")
-      (is (= [] (get-in ready [:orders :references]) (get-in ready [:orders :triggers]))))))
+      (is (= [] (get-in ready [:orders :references])))
+      (is (= [[:after #{:update} [:order/customer-id] :row nil]]
+             (map (juxt :timing :events :update-of :for-each :when) (get-in ready [:orders :triggers])))
+          "the parent carries its customer down to its jobs: the follow, not the link")
+      (is (str/includes? (get-in ready [:jobs :gates :update]) "groundwork_access.is_carrying()")
+          "the jobs' write gate lets the follow through")
+      (is (not (str/includes? (get-in ready [:photos :gates :update]) "is_carrying"))
+          "and only a table that carries a column that may be empty"))))
 
 (deftest a-system-actor-is-refused-a-transaction-and-a-bad-name
   (is (= :groundwork-access/bad-system-name
@@ -343,3 +368,60 @@
                                               (run-sql! transaction "DELETE FROM photos")))
               (is (= [0 0 0] (map count-of [(str "orders WHERE order__id = '" order-42 "'") "jobs" "photos"]))
                   "the job went with its order, and the photo's refusal waited for the commit, as its column says"))))))))
+
+(deftest a-column-carried-where-set-is-filled-and-follows-its-parent
+  (if-not port
+    (println "groundwork-access.system-and-parents-test: skipped, ACCESS_TEST_PORT is not set")
+    (with-database
+      (fn [super-pool app-pool]
+        (let [customer-of (fn [job-id] (:job/customer-id (first (find-rows super-pool (str "SELECT job__customer_id FROM jobs WHERE job__id = '" job-id "'")))))
+              add-job!    (fn [person order]
+                            (as-person app-pool person
+                                       #(:job/id (first (postgres/find-rows % (postgres/make-query-from-sql-text
+                                                                               "a job" (str "INSERT INTO jobs (job__order_id, job__customer_id) VALUES ('"
+                                                                                            order "', '" vic "') RETURNING job__id"))
+                                                                            {})))))
+              claim!      (fn [person customer]
+                            (as-person app-pool person
+                                       #(run-sql! % (str "UPDATE orders SET order__customer_id = " (if customer (str "'" customer "'") "NULL")
+                                                         " WHERE order__id = '" order-42 "'"))))
+              mine        (fn [person] (set (map :job/id (as-person app-pool person
+                                                                    #(postgres/find-rows % (postgres/make-query-from-sql-text "mine" "SELECT job__id FROM jobs") {})))))
+              job         (add-job! anna order-42)]
+          (testing "filled on insert from the parent, empty as the guest's order is: a value the insert names is overwritten"
+            (is (nil? (customer-of job))))
+          (testing "the guest claims her order later: her job follows, past the gates (Carl may write the order, not its jobs)"
+            (is (= #{} (mine carl)) "Carl sees no job")
+            (claim! carl kim)
+            (is (= kim (customer-of job)))
+            (is (= #{job} (mine kim)) "Kim, of no shop, now sees her job")
+            (is (= #{} (mine vic))))
+          (testing "a job added after carries the claimed customer"
+            (is (= kim (customer-of (add-job! anna order-42)))))
+          (testing "a change, and an unclaim, follow too; another order's jobs stay"
+            (let [other (add-job! mia order-99)]
+              (claim! carl vic)
+              (is (= #{vic} (set (map :job/customer-id (find-rows super-pool (str "SELECT job__customer_id FROM jobs WHERE job__order_id = '" order-42 "'")))))) 
+              (is (nil? (customer-of other)))
+              (claim! carl nil)
+              (is (= #{nil} (set (map :job/customer-id (find-rows super-pool (str "SELECT job__customer_id FROM jobs WHERE job__order_id = '" order-42 "'"))))))))
+          (testing "the column is no part of the link: the follow alone carries it, and the gates read it like any column"
+            (claim! carl kim)
+            (let [settings {:cookie-name "app_session" :session-days 1 :visitor-session-days 1 :renew-after-minutes 60
+                            :allowed-origin "http://app.test" :secure-cookie? false
+                            :token-lead "app_" :token-shown-characters 10 :token-longest-days 30 :outside-issuers []}
+                  ready    (access/put-access-into-handlers
+                            {:jobs/my-one {:action :jobs/mine :record [:jobs :job/id] :params-shape [:map [:job/id :uuid]]
+                                           :answer-shape [:map [:job/id :uuid]] :refusals {} :rate-limit nil :run-steps-in nil
+                                           :steps [{:name :answer :enter #(steps/add-answer-to-context % (select-keys (:groundwork-steps/message-data %) [:job/id]))}]}}
+                            {:pool app-pool :tables tables :scope-kinds scope-kinds
+                             :find-session-step (access/make-find-session-step app-pool settings)})
+                  request  (fn [person]
+                             {:request-method :post
+                              :headers {"origin" "http://app.test"
+                                        "cookie" (first (str/split (:set-cookie (access/sign-in! app-pool {:headers {}} person
+                                                                                                  {:settings settings :tables [] :session-flags #{} :session-lasts :session-days :outside-subjects {}}))
+                                                                   #";"))}})]
+              (is (= {:job/id (str job)} (:jobs/my-one (answer-message ready (request kim) {:jobs/my-one {:job/id job}} {:shaper shaper :log log}))))
+              (is (= [] (access/find-leaks ready (request vic) {:jobs [job]} {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 10}))
+                  "the leak test: Vic reaches none of Kim's jobs"))))))))

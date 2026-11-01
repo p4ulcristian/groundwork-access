@@ -16,6 +16,9 @@
    - groundwork_access.fill_…(): a record under a record, its carried columns set
      from its parent's row before an insert or a change of its parent
      (groundwork_access.parents).
+   - groundwork_access.follow_…(): a parent's change of a column its children
+     carry where set (:carries-optional), carried down to them past the
+     gates (groundwork_access.parents).
 
    The first three read past the gates: groundwork_access.passing is 'on' only while
    they read, then back to what it was; an error ends the transaction, and
@@ -130,4 +133,6 @@
                 [action condition] (sort-by (comp str key) (get-in conditions [(:table table) :actions]))]
             (made (conditions/find-may-function-name action (:table table)) (make-may-function-statement table action condition)))
           (for [table tables :when (:parent table)]
-            (made (parents/find-fill-function-name table) (parents/make-fill-function-statement table tables-by-key)))))))
+            (made (parents/find-fill-function-name table) (parents/make-fill-function-statement table tables-by-key)))
+          (for [table tables :when (seq (get-in table [:parent :carries-optional]))]
+            (made (parents/find-follow-function-name table) (parents/make-follow-function-statement table tables-by-key)))))))

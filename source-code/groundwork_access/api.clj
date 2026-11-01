@@ -588,7 +588,7 @@
    declared makes):
    groundwork_access.find_asking_person(), find_asking_visitor(),
    find_asking_system(), find_scopes_holding(kind, action),
-   has_session_flag(flag), is_passing(), find_moving_visitor(),
+   has_session_flag(flag), is_passing(), is_carrying(), find_moving_visitor(),
    find_moving_person(), is_acting(action). They read two settings of the
    transaction: groundwork_access.asking, who is asking, as JSON (groundwork_access.asking):
 
@@ -604,12 +604,14 @@
    (run-as-asker-of-request!, \"what may I do?\", explain-refusal, the
    check itself, a named system actor's :anyone rows). And
    groundwork_access.passing, 'on' only while one of groundwork-access's own functions reads
-   past the gates (is_passing). The app's own role may call them once
+   past the gates (is_passing), and groundwork_access.carrying, 'on' only while a
+   parent's follow writes its children's optional carried columns
+   (is_carrying). The app's own role may call them once
    postgres/grant-tables-to-role! is given groundwork-access's tables (it grants their
    folder, and the functions in it)."
   (mapv #(str "groundwork_access/sql_functions/" % ".sql")
         ["find_asking_person" "find_asking_visitor" "find_asking_system" "find_scopes_holding"
-         "has_session_flag" "is_passing" "find_moving_visitor" "find_moving_person" "is_acting"]))
+         "has_session_flag" "is_passing" "is_carrying" "find_moving_visitor" "find_moving_person" "is_acting"]))
 
 (defn make-access-functions
   "The SQL functions the app's sentences and denies need, made from them,
@@ -703,7 +705,9 @@
    record under a record (:parent) is given, beside its own :references
    and :triggers, the link to its parent (a reference over several
    columns, ON UPDATE CASCADE, deleting as the parent column's own
-   reference says) and the fill of its carried columns
+   reference says) and the fill of its carried columns; its parent, when it
+   carries a column that may be empty (:carries-optional), the trigger that
+   carries a change of it down
    (groundwork_access.parents). A table that names a scope (references a scope
    kind's table) must have :access, or :access :public on purpose;
    otherwise this throws.
@@ -722,7 +726,7 @@
                   (assoc table-map :gates operations)
                   (assoc table-map :gates nil))
                 (parents/put-link-and-fill-on-table tables-by-key)))
-          tables)))
+          (parents/put-follows-on-parents tables tables-by-key))))
 
 (def refusals
   "groundwork-access's own reasons, each with its data's shape (all nil: none), the

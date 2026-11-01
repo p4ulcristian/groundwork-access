@@ -291,6 +291,11 @@ their parent, `:refuse` and `:restrict` keep a parent that has any
 (`:set-null` is refused at the start: the column is NOT NULL). The map
 doesn't say the link among its own `:references`
 ([why](decisions/2026-11-01-a-childs-link-deletes-as-its-parent-column-says.md)).
+A carried column that may be empty (an order's customer, set when a guest
+claims it) is `:carries-optional {:job/customer-id :order/customer-id}`: no
+part of the link, filled on insert, and carried down by a trigger on the
+parent after a change of its column, past the gates
+([why](decisions/2026-11-01-a-column-a-child-carries-where-set-is-filled-and-follows-its-parent-past-the-gates.md)).
 
 ## Outside issuers
 

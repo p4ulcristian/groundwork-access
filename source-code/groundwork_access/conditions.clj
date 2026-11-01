@@ -415,7 +415,12 @@
                             [action condition]))
      :operations {:read   (join-with-or (remove #(or (nil? %) (= "false" %)) ["(SELECT groundwork_access.is_passing())" moving (for-op :read)]))
                   :insert (for-op :insert)
-                  :update (join-with-or (remove #(or (nil? %) (= "false" %)) [moving update-gate]))
+                  ;; a parent's follow writes its children's optional carried
+                  ;; columns past the gate (groundwork_access.parents)
+                  :update (join-with-or (remove #(or (nil? %) (= "false" %))
+                                                [(when (seq (get-in table [:parent :carries-optional]))
+                                                   "(SELECT groundwork_access.is_carrying())")
+                                                 moving update-gate]))
                   :delete (for-op :delete)}}))
 
 (defn make-sql-conditions

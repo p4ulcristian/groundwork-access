@@ -1,6 +1,6 @@
 # A scope is removed with everything groundwork-access keeps of it
 
-> Proposed 2026-11-01 for Paul's decision (the switch of Iron Rainbow onto composer v8: a deleted shop left its scope, its Owner role and that role's row behind). Not released: on the branch remove-scope.
+> Paul's decision, 2026-11-01 (the switch of Iron Rainbow onto composer v8: a deleted shop left its scope, its Owner role and that role's row behind). Accepted 2026-11-01. Since v0.8.7.
 
 **Decision:** `remove-scope!` `(transaction [kind id])` removes a scope with its memberships and the roles they hold, its roles (Owner too) and their actions, and its row, in the caller's transaction: the one that deletes the app's own row. It answers whether there was such a scope. While scopes sit under it, it refuses (`:groundwork-access/scope-has-scopes-below`, `{:scope :below n}`): the app removes those first, as it deletes their rows first.
 

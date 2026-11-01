@@ -16,6 +16,7 @@
            add-membership! set-membership-roles! remove-membership!
            list-actions-of-person make-sql-conditions make-access-functions function-files
            put-access-into-handlers put-gates-on-tables find-leaks explain-refusal
+           find-views-past-the-gates check-views
            my-actions-answer-shape make-my-actions-handler refusals
            ;; a named system actor
            run-as-system! find-system-leaks}

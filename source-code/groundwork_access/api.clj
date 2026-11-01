@@ -34,7 +34,9 @@
    make-access-functions, those made from the sentences, both declared
    to groundwork-postgres). The leak test proves
    them (find-leaks); explain-refusal says why one message would be
-   refused.
+   refused. A view in the app's folders must read through the gates too,
+   as whoever asks (security_invoker): check-views refuses one that
+   doesn't.
 
      (def find-session (access/make-find-session-step pool settings))
      (def ready (access/put-access-into-handlers handlers {:pool pool :tables tables :scope-kinds scope-kinds
@@ -64,6 +66,7 @@
    [groundwork-access.shapes :as shapes]
    [groundwork-access.system :as system]
    [groundwork-access.tokens :as tokens]
+   [groundwork-access.views :as views]
    [groundwork-postgres.api :as postgres]))
 
 ;; -----------------------------------------------------------------------------
@@ -727,6 +730,34 @@
                   (assoc table-map :gates nil))
                 (parents/put-link-and-fill-on-table tables-by-key)))
           (parents/put-follows-on-parents tables tables-by-key))))
+
+(defn find-views-past-the-gates
+  "The views that would let a reader past the gates, in the folders the
+   tables are in (the folders the app's role is granted: every table and
+   view there): each view that isn't security_invoker, which Postgres runs
+   with its owner's rights (the tables' owner, who may pass every gate), and
+   each materialized view, whose rows stand where no gate holds them.
+   [{:name \"report_totals\" :materialized? false}], by name as
+   groundwork-postgres names a view; [] for none. For an app's own tests:
+
+     (is (= [] (access/find-views-past-the-gates pool tables)))"
+  [pool tables]
+  (views/find-views-past-the-gates pool tables))
+
+(defn check-views
+  "The start's check of the views (find-views-past-the-gates): returns nil,
+   or throws :groundwork-access/views-past-the-gates with every one at once
+   (:views). A view in the app's folders reads as whoever asks:
+
+     CREATE VIEW open_orders WITH (security_invoker = true) AS
+     SELECT order__id, order__shop_id FROM orders WHERE order__state = 'open'
+
+   one that an outside reader needs past the gates (a report another role
+   reads) lives in a folder of its own, which the app's role is never
+   granted. Run on the app's own pool, after migrate: groundwork's start
+   runs it."
+  [pool tables]
+  (views/check-views pool tables))
 
 (def refusals
   "groundwork-access's own reasons, each with its data's shape (all nil: none), the

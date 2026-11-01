@@ -702,7 +702,8 @@
    other one :gates nil (no row rules), so each map says its gates. A
    record under a record (:parent) is given, beside its own :references
    and :triggers, the link to its parent (a reference over several
-   columns, ON UPDATE CASCADE) and the fill of its carried columns
+   columns, ON UPDATE CASCADE, deleting as the parent column's own
+   reference says) and the fill of its carried columns
    (groundwork_access.parents). A table that names a scope (references a scope
    kind's table) must have :access, or :access :public on purpose;
    otherwise this throws.

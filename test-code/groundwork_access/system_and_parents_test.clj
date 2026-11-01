@@ -51,7 +51,8 @@
 (def ^:private jobs
   {:table      :jobs
    :columns    [[:job/id :uuid {:primary-key? true :default :random-uuid}]
-                [:job/order-id :uuid {:references {:to :order/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
+                ;; a job goes with its order; a photo keeps its job (photo/job-id refuses, at the commit)
+                [:job/order-id :uuid {:references {:to :order/id :on-delete :cascade :on-update :refuse :checked-at :statement}}]
                 [:job/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
    :indexes    [{:columns [[:job/order-id :ascending :nulls-last]]
                  :method :btree :ops {} :unique? false :where nil}
@@ -68,7 +69,7 @@
 (def ^:private photos
   {:table      :photos
    :columns    [[:photo/id :uuid {:primary-key? true :default :random-uuid}]
-                [:photo/job-id :uuid {:references {:to :job/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]
+                [:photo/job-id :uuid {:references {:to :job/id :on-delete :refuse :on-update :refuse :checked-at :commit}}]
                 [:photo/shop-id :uuid {:references {:to :shop/id :on-delete :refuse :on-update :refuse :checked-at :statement}}]]
    :indexes    [{:columns [[:photo/job-id :ascending :nulls-last]]
                  :method :btree :ops {} :unique? false :where nil}]
@@ -192,14 +193,27 @@
               (problems [shops orders (assoc-in jobs [:parent :carries] {:job/shop-id :order/nothing})])))
     (is (some #(re-find #":parent is \{:column" %)
               (problems [shops orders (assoc jobs :parent {:column :job/order-id})]))))
+  (testing "the parent column's delete is one the link can follow; the map doesn't say the link itself"
+    (is (some #(re-find #":parent's column :job/order-id says :on-delete :set-null; the link to the parent deletes as" %)
+              (problems [shops orders (assoc-in jobs [:columns 1 2 :references :on-delete] :set-null)])))
+    (is (some #(re-find #"its :references say the link to the parent over \[:job/shop-id :job/order-id\].*leave it out" %)
+              (problems [shops orders (assoc jobs :references [{:columns [:job/shop-id :job/order-id] :to [:order/shop-id :order/id]
+                                                                :on-delete :cascade :on-update :cascade :checked-at :statement}])]))))
   (testing "groundwork-access puts the link and the fill on the child, beside its own"
     (let [ready (into {} (map (juxt :table identity)) (access/put-gates-on-tables tables scope-kinds))]
       (is (= [{:columns [:job/order-id :job/shop-id] :to [:order/id :order/shop-id]
-               :on-delete :refuse :on-update :cascade :checked-at :statement}]
-             (get-in ready [:jobs :references])))
+               :on-delete :cascade :on-update :cascade :checked-at :statement}]
+             (get-in ready [:jobs :references]))
+          "a job's order column cascades: so does its link")
       (is (= [{:columns [:photo/job-id :photo/shop-id] :to [:job/id :job/shop-id]
-               :on-delete :refuse :on-update :cascade :checked-at :statement}]
-             (get-in ready [:photos :references])))
+               :on-delete :refuse :on-update :cascade :checked-at :commit}]
+             (get-in ready [:photos :references]))
+          "a photo's job column refuses, at the commit: so does its link")
+      (is (= {:on-delete :restrict :checked-at :commit}
+             (-> [shops orders (assoc-in jobs [:columns 1 2 :references] {:to :order/id :on-delete :restrict :on-update :refuse :checked-at :commit})]
+                 (access/put-gates-on-tables scope-kinds)
+                 (get 2) :references first (select-keys [:on-delete :checked-at])))
+          "and when it is checked, as the column says")
       (is (= [:before #{:insert :update} [:job/order-id] :row nil]
              ((juxt :timing :events :update-of :for-each :when) (first (get-in ready [:jobs :triggers]))))
           "called for every row: the fill itself skips a row with no parent")
@@ -315,4 +329,17 @@
               (is (= {:job/id (str job-id)} (:jobs/one (answer-message ready (request mia) {:jobs/one {:job/id job-id}}
                                                                           {:shaper shaper :log log})))
                   "Mia, in shop 9 too, still does")
-              (is (= [] (access/find-leaks ready (request anna) {:jobs [job-id]} {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 10}))))))))))
+              (is (= [] (access/find-leaks ready (request anna) {:jobs [job-id]} {:answer-message (make-answerer shaper log) :scope-kinds scope-kinds :seed 7 :size 10})))))
+          (testing "a parent's delete does what its column says: a job with a photo stays, a job goes with its order"
+            (let [count-of (fn [table] (count (find-rows super-pool (str "SELECT 1 AS one FROM " table))))]
+              (is (thrown-with-msg? Exception #"photos" (run-sql! super-pool "DELETE FROM jobs"))
+                  "the photo's link refuses, as its job column does")
+              (is (thrown-with-msg? Exception #"photos" (run-sql! super-pool (str "DELETE FROM orders WHERE order__id = '" order-42 "'")))
+                  "the order's delete takes its job, whose photo refuses: nothing goes")
+              (is (= [1 1 1] (map count-of [(str "orders WHERE order__id = '" order-42 "'") "jobs" "photos"])))
+              (postgres/run-in-transaction! super-pool {:read-only? false :log nil}
+                                            (fn [transaction]
+                                              (run-sql! transaction (str "DELETE FROM orders WHERE order__id = '" order-42 "'"))
+                                              (run-sql! transaction "DELETE FROM photos")))
+              (is (= [0 0 0] (map count-of [(str "orders WHERE order__id = '" order-42 "'") "jobs" "photos"]))
+                  "the job went with its order, and the photo's refusal waited for the commit, as its column says"))))))))

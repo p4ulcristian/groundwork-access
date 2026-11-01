@@ -5,7 +5,7 @@
 
      {:table   :jobs
       :columns [[:job/id       :uuid {:primary-key? true}]
-                [:job/order-id :uuid {:references {:to :order/id :on-delete :refuse     ; the parent
+                [:job/order-id :uuid {:references {:to :order/id :on-delete :cascade    ; the parent
                                                    :on-update :refuse :checked-at :statement}}]
                 [:job/shop-id  :uuid {:references {:to :shop/id :on-delete :refuse      ; carried from it
                                                    :on-update :refuse :checked-at :statement}}]]
@@ -22,7 +22,12 @@
      carried ones pointing at the parent's id and columns, ON UPDATE
      CASCADE: a parent's change is carried to its children by Postgres,
      past the gates (a referential action runs as the table's owner), in
-     the same statement, and a child can hold no other value;
+     the same statement, and a child can hold no other value. On a
+     parent's delete, and when it is checked, the link does what the
+     parent column's own reference says: :cascade deletes the children
+     with their parent, :refuse and :restrict refuse a parent that has
+     any (:set-null can't hold a NOT NULL column, so it is refused at the
+     start). The map doesn't say the link among its own :references;
    - the fill: a trigger before each insert, and each update of the parent
      column, sets the carried columns from the parent, read past the gates
      (groundwork_access.fill_…()), so the app's SQL never names them.
@@ -47,6 +52,11 @@
   (let [target (get-in (find-column-options table (get-in table [:parent :column])) [:references :to])]
     (when target
       (some (fn [[_ other]] (when (= [target] (sentences/find-primary-key-columns other)) other)) tables-by-key))))
+
+(defn- find-parent-reference
+  "The parent column's own :references, or nil."
+  [table-map]
+  (:references (find-column-options table-map (get-in table-map [:parent :column]))))
 
 (defn- find-carried-pairs
   "The :carries as [[child column, parent column] …], in a stable order."
@@ -73,6 +83,15 @@
              [(str table ": :parent's column " column " is optional; a record under a record has its parent (NOT NULL)")])
            (when (and (contains? columns column) (not (sentences/is-indexed? table-map [column])))
              [(str table " needs an index on [" column "], what a parent's change is carried down by")])
+           (let [on-delete (:on-delete (find-parent-reference table-map))]
+             (when (and parent-table (not (contains? #{:cascade :refuse :restrict} on-delete)))
+               [(str table ": :parent's column " column " says :on-delete " (pr-str on-delete)
+                     "; the link to the parent deletes as that column's reference says, and a NOT NULL column can't be set to null:"
+                     " say :cascade (the children go with their parent), :refuse or :restrict (a parent with children stays)")]))
+           (for [{own-columns :columns} (:references table-map)
+                 :when (= (into #{column} (keys carries)) (set own-columns))]
+             (str table ": its :references say the link to the parent over " (pr-str own-columns)
+                  ", which groundwork-access makes from :parent, deleting as the parent column's reference says: leave it out"))
            (for [[mine theirs] carries
                  problem (cond
                            (not (contains? columns mine))
@@ -99,14 +118,17 @@
 
 (defn make-link
   "The reference over several columns that ties the carried columns to
-   the parent's (groundwork-postgres's :references entry)."
+   the parent's (groundwork-postgres's :references entry): a parent's
+   change carried down (ON UPDATE CASCADE); its delete, and when the link
+   is checked, as the parent column's own reference says."
   [{{:keys [column]} :parent :as table-map} tables-by-key]
-  (let [pairs (find-carried-pairs table-map)]
-    {:columns   (into [column] (map first pairs))
-     :to        (into (sentences/find-primary-key-columns (find-parent-table table-map tables-by-key)) (map second pairs))
-     :on-delete :refuse
-     :on-update :cascade
-     :checked-at :statement}))
+  (let [pairs                          (find-carried-pairs table-map)
+        {:keys [on-delete checked-at]} (find-parent-reference table-map)]
+    {:columns    (into [column] (map first pairs))
+     :to         (into (sentences/find-primary-key-columns (find-parent-table table-map tables-by-key)) (map second pairs))
+     :on-delete  on-delete
+     :on-update  :cascade
+     :checked-at checked-at}))
 
 (defn make-fill-trigger
   "The trigger that fills the carried columns (groundwork-postgres's :triggers entry)."

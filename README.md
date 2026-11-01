@@ -285,6 +285,12 @@ CASCADE`: a parent's change is carried down by Postgres, past the gates)
 and a fill of the carried columns on insert, so the app's SQL never names
 them and its sentences compare the child's own column
 ([why](decisions/2026-10-23-records-under-records-carry-their-parents-columns.md)).
+On a parent's delete the link does what the parent column's own reference
+says, and is checked when it says: `:cascade` takes the children with
+their parent, `:refuse` and `:restrict` keep a parent that has any
+(`:set-null` is refused at the start: the column is NOT NULL). The map
+doesn't say the link among its own `:references`
+([why](decisions/2026-11-01-a-childs-link-deletes-as-its-parent-column-says.md)).
 
 ## Outside issuers
 

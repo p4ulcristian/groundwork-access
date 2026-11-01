@@ -1,5 +1,7 @@
 # Records under records carry their parent's columns, by cellar's link and a fill
 
+> **Changed in part** by [A child's link to its parent deletes as its parent column says](2026-11-01-a-childs-link-deletes-as-its-parent-column-says.md) (2026-11-01, v0.8.4): the link deletes, and is checked, as the parent column's own reference says; its price below no longer holds.
+
 > Since v0.7.5. Replaces [Records under records wait for cellar's matching links](2026-10-23-records-under-records-wait-for-cellar.md): cellar has them since v0.4.5 ([A table map says references over several columns, and the triggers a library declares](https://github.com/p4ulcristian/cellar/blob/main/decisions/2026-10-23-a-table-map-says-references-over-several-columns-and-a-librarys-triggers.md)). Builds [Every scoped table names its scope](2026-10-12-every-scoped-table-names-its-scope.md), [A record of two scopes may have a parent and children](2026-10-13-a-record-of-two-scopes-may-have-a-parent-and-children.md) and the carrying half of [A record between fixed sides carries them](2026-10-13-a-record-between-fixed-sides-carries-them.md).
 
 **Decision:** a table map says its parent in doorman's words, `:parent {:column :job/order-id :carries {:job/shop-id :order/shop-id}}`: the column naming the parent (a reference to the parent's one-column primary key), and each carried column with the parent's column it equals. doorman keeps them equal, with cellar:

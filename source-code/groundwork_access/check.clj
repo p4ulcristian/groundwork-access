@@ -24,13 +24,17 @@
    - :record: may this person do the action on the record? Not, and they
      can't see it either: :groundwork-access/not-found (nothing tells them it
      exists); not, but they can see it: :groundwork-access/not-allowed.
-   - :scope [kind param]: is the action held in the scope the param names
-     (a membership above it counts)? Not: :groundwork-access/not-found; a session
-     flag or the scope's state denying it: :groundwork-access/not-allowed.
+   - :scope [kind param]: do the person's roles hold the action in the
+     scope the param names (a membership above it counts)? Not:
+     :groundwork-access/not-found; a session flag or the scope's state
+     denying it: :groundwork-access/not-allowed.
    - :scope :every-scope-holding-the-action: can the asker have the action
      at all, open to them by a sentence (anyone, anyone signed in, a
-     visitor) or held somewhere? :scope :no-scope: by an open sentence
-     only. Not: :groundwork-access/not-found; a session flag denying it:
+     visitor) or held by their roles somewhere? :scope :no-scope: by an
+     open sentence only.
+   An action is held only by the person's roles: a [:member …] sentence
+   naming another action held there (its own :to or its :via's) gives
+   rows, never the action, so it lets no record and no scope through. Not: :groundwork-access/not-found; a session flag denying it:
      :groundwork-access/not-allowed.
    Refused while nobody is signed in, the reason is :groundwork-access/signed-out,
    whichever of the two it was: a signed-out asker learns nothing of the
@@ -154,7 +158,7 @@
                  " WHERE " (find-primary-key-column tables table-key) " = param('record/id')")]
     (postgres/make-query-from-sql-text
      (str "may " action " on " table-key)
-     (str "SELECT EXISTS (" row " AND (" (get-in conditions [table-key :actions action]) ")) AS allowed, "
+     (str "SELECT EXISTS (" row " AND (" (get-in conditions [table-key :check action]) ")) AS allowed, "
           "EXISTS (" row " AND (" (get-in conditions [table-key :operations :read]) ")) AS visible"))))
 
 (defn find-scope-columns
@@ -223,9 +227,14 @@
 
 (defn find-counted-ways
   "The ways of having the action that count for a handler acting where
-   :scope says: every one, or for :no-scope the open ones."
-  [ways scope]
-  (if (= :no-scope scope) (set (filter open-ways ways)) ways))
+   :scope says: the open ones, and holding the action itself somewhere
+   ([:holds action]); for :no-scope the open ones only. [:holds
+   other-action], a [:member … other-action] sentence's way, gives rows,
+   never the action."
+  [ways scope action]
+  (set (filter #(or (contains? open-ways %)
+                    (and (not= :no-scope scope) (= [:holds action] %)))
+               ways)))
 
 (defn- find-reach-of-record
   "{:allowed bool :visible bool} for the record the message names."
@@ -252,12 +261,12 @@
           :else   {:answer not-found})))
 
 (defn- check-named-scope
-  "{:answer …} or {:scopes [the scope]}: the action held there, and no
-   deny saying no."
-  [{:keys [scope-kinds needs]} {:keys [action] [kind param] :scope} context]
+  "{:answer …} or {:scopes [the scope]}: the action held there by the
+   person's roles, and no deny saying no."
+  [{:keys [scope-kinds]} {:keys [action] [kind param] :scope} context]
   (let [scope-id (get-in context [:groundwork-steps/message-data param])
         scope    [kind scope-id]]
-    (cond (not (and (uuid? scope-id) (acting/is-held-there? needs action scope (:groundwork-access/actions context))))
+    (cond (not (and (uuid? scope-id) (acting/is-held-by-roles? action scope (:groundwork-access/actions context))))
           {:answer not-found}
           (find-flag-deny scope-kinds action (:groundwork-access/session-flags context))
           {:answer not-allowed}
@@ -270,7 +279,7 @@
   "{:answer …} or {:scopes […]}, for :every-scope-holding-the-action and
    :no-scope: the asker can have the action by a way that counts."
   [{:keys [scope-kinds ways]} {:keys [action scope]} context]
-  (cond (not-any? #(does-way-hold? % context) (find-counted-ways ways scope))
+  (cond (not-any? #(does-way-hold? % context) (find-counted-ways ways scope action))
         {:answer not-found}
         (find-flag-deny scope-kinds action (:groundwork-access/session-flags context))
         {:answer not-allowed}

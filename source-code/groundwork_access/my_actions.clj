@@ -7,16 +7,19 @@
       {:scope-kind :shop :scope-id #uuid \"…\" :actions [:orders/edit :orders/see]}]
 
    A scope's actions: those the person's roles hold there (and in the
-   scopes above it); a sentence's action whose [:member column action]
-   needs another action held there; and an action a :via gives through
-   related rows that name the scope (a partner's agreement with a shop).
+   scopes above it); and an action a :via gives through related rows that
+   name the scope (a partner's agreement with a shop), when the via's
+   [:member …] needs that action itself held. A [:member … other-action]
+   sentence, its own :to or its :via's, gives rows, never the action: the
+   check counts no such sentence, and neither does this answer
+   (decisions/2026-11-09-the-check-counts-an-action-held-only-by-the-persons-roles.md).
 
    The entry of nil kind and id holds the actions no scope lists: :anyone
    sentences' always; for someone signed in, :signed-in and [:me column]
    sentences'; for a visitor, [:me <visitor column>] sentences'; and a
-   [:member <kind of one scope> action] or a :via's [:member …] whose
-   related rows name no scope of the row, when the person holds that
-   action somewhere. Such an action is listed for every scope, and the
+   [:member <kind of one scope>] or a :via's [:member …] whose related
+   rows name no scope of the row, needing the action itself held, when
+   the person's roles hold it somewhere. Such an action is listed for every scope, and the
    row decides. Without such actions the nil entry is left out.
 
    A session flag a deny names takes its actions out everywhere; a
@@ -62,22 +65,17 @@
 
 (defn- find-plan
   "What the answer is made of, read once from the sentences: the open
-   actions; [:member column held] sentences giving another action than
-   the one held; vias whose related rows name the row's scope; and the
-   actions open to whoever holds an action somewhere."
+   actions; vias whose related rows name the row's scope; and the actions
+   open to whoever holds them somewhere. Only sentences giving the action
+   itself (sentences/gives-the-action-itself?)."
   [tables scope-kinds]
   (let [tables-by-key (into {} (map (juxt :table identity)) tables)
         sentences     (for [{:keys [access] :as table} tables :when (sequential? access)
                             sentence access
-                            action (sentences/find-allowed-actions sentence)]
+                            action (sentences/find-allowed-actions sentence)
+                            :when (sentences/gives-the-action-itself? sentence action)]
                         [table sentence action])]
     {:open      (sentences/find-open-actions tables)
-     :held-for  (distinct (for [[table {:keys [to]} action] sentences
-                                :when (and (vector? to) (= :member (first to)) (sentences/is-column-word? (second to)))
-                                :let [held (sentences/find-held-action to action)]
-                                :when (not= held action)]
-                            {:action action :held held
-                             :kind   (sentences/find-kind-of-member-column table (second to) tables-by-key scope-kinds)}))
      :via-scope (distinct (for [[table {:keys [via]} action] sentences :when via
                                 [i [mine _]] (map-indexed vector (sentences/find-matched-pairs via))
                                 :let [kind (sentences/find-kind-named-by-column table mine tables-by-key scope-kinds)]
@@ -104,15 +102,6 @@
                                                      (str "SELECT " (conditions/find-denied-function-name deny) "() AS scope__id"))
                                         {}))))
 
-(defn- add-held-for [actions-by-scope held-for]
-  (reduce (fn [result {:keys [action held kind]}]
-            (reduce (fn [result [[scope-kind _ :as scope] actions]]
-                      (if (and (= kind scope-kind) (contains? actions held))
-                        (update result scope (fnil conj #{}) action)
-                        result))
-                    result actions-by-scope))
-          actions-by-scope held-for))
-
 (defn- take-out-denied [actions-by-scope everywhere scope-kinds session-flags denied-by-state]
   (let [flagged   (set (for [deny (scope-kinds/find-denies scope-kinds)
                              :when (and (:session deny) (contains? session-flags (:session deny)))
@@ -129,14 +118,14 @@
      (set (remove flagged everywhere))]))
 
 (defn- make-answer-step [tables scope-kinds]
-  (let [{:keys [open held-for via-scope held-anywhere]} (find-plan tables scope-kinds)
+  (let [{:keys [open via-scope held-anywhere]} (find-plan tables scope-kinds)
         state-denies (filter :when (scope-kinds/find-denies scope-kinds))]
     {:name  :groundwork-access/answer-my-actions
      :enter (fn [{:groundwork-access/keys [person-id visitor-id session-flags transaction] :as context}]
               (let [held     (asking/set-asking-with-every-action! transaction scope-kinds
                                                                        {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
                                                                        true)   ; read-only from here on
-                    by-scope (-> (add-held-for held held-for)
+                    by-scope (-> held
                                  (as-> by-scope
                                        (reduce (fn [by-scope {:keys [action kind] :as via}]
                                                  (reduce #(update %1 [kind %2] (fnil conj #{}) action)

@@ -128,7 +128,7 @@
                       :roles      (mapv #(update % :actions (fn [actions] (vec (sort-by str actions)))) roles)})))))
 
 (defn- find-answer [transaction table id action conditions scope-kinds]
-  (let [action-sql (get-in conditions [(:table table) :actions action])
+  (let [action-sql (get-in conditions [(:table table) :check action])
         reads      (for [[other sql] (get-in conditions [(:table table) :actions])
                          :when (contains? (scope-kinds/find-what-action-does scope-kinds other) :read)]
                      sql)]
@@ -158,13 +158,13 @@
 
 (defn- explain-named-scope
   "For a :scope [kind param] handler: the scope the param names, whether
-   the action is held there, the roles that give it (or what one of its
-   [:member …] sentences needs held there), and the check's answer."
-  [transaction scope-kinds needs asker action [kind param] params actions-by-scope]
+   the person's roles hold the action there, the roles that give it, and
+   the check's answer."
+  [transaction scope-kinds asker action [kind param] params actions-by-scope]
   (let [scope-id (get params param)
-        held?    (and (uuid? scope-id) (acting/is-held-there? needs action [kind scope-id] actions-by-scope))
+        held?    (and (uuid? scope-id) (acting/is-held-by-roles? action [kind scope-id] actions-by-scope))
         state    (when held? (check/find-state-deny transaction scope-kinds action [kind scope-id]))
-        giving   (into #{action} (for [{need-kind :kind :keys [held]} (get needs action) :when (= kind need-kind)] held))]
+        giving   #{action}]
     {:scope  {:says [kind param] :scope-kind kind :scope-id scope-id :held-there? held?
               :given-by (if (uuid? scope-id) (find-roles-giving transaction scope-kinds (:person-id asker) [kind scope-id] giving) [])}
      :answer (cond (not held?)                                                 :groundwork-access/not-found
@@ -180,12 +180,11 @@
                                  sentence (sentences/find-sentences-of-action table action)
                                  :let [way (sentences/find-way-of-sentence sentence action table tables-by-key)]]
                              {:table (:table table) :sentence sentence :way way
-                              :holds? (and (contains? (check/find-counted-ways #{way} scope) way)
+                              :holds? (and (contains? (check/find-counted-ways #{way} scope action) way)
                                            (check/does-way-hold? way context))}))
         flag-deny     (check/find-flag-deny scope-kinds action (:session-flags asker))
         named         (when (vector? scope)
-                        (explain-named-scope transaction scope-kinds (acting/find-needs tables scope-kinds)
-                                             asker action scope params actions-by-scope))]
+                        (explain-named-scope transaction scope-kinds asker action scope params actions-by-scope))]
     {:record            nil
      :scope             (if named (:scope named) {:says scope})
      :answer            (cond named                       (:answer named)

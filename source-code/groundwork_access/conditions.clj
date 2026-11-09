@@ -383,10 +383,12 @@
         ;; action held in the same scope opens nothing. In an operation, only
         ;; the sentences whose :only allows it; for the check (op nil), those
         ;; allowing what the action is for (check-operations).
-        condition-of (fn [action op]
+        condition-of (fn [action op & {:keys [check?]}]
                        (let [ops    (if op #{op} (check-operations (get actions-do action)))
-                             all    (filter (fn [sentence] (some #(sentences/does-sentence-allow-operation? sentence %) ops))
-                                            (sentences/find-sentences-of-action table action))
+                             all    (cond->> (filter (fn [sentence] (some #(sentences/does-sentence-allow-operation? sentence %) ops))
+                                                     (sentences/find-sentences-of-action table action))
+                                      ;; the check: only the sentences giving the action itself
+                                      check? (filter #(sentences/gives-the-action-itself? % action)))
                              people (join-sentences-with-or (remove sentences/is-system-sentence? all) action place)
                              system (join-sentences-with-or (filter sentences/is-system-sentence? all) action place)]
                          (when (or people system)
@@ -406,6 +408,10 @@
                          (str "(" updates ") AND " (turn-guard-into-sql (:table table) guard table (for-op :insert)))
                          updates))]
     {:actions    (into {} (for [action actions] [action (or (condition-of action nil) "false")]))
+     ;; the check's: as :actions, of the sentences giving the action itself
+     ;; (sentences/gives-the-action-itself?): a [:member … other-action]
+     ;; sentence gives rows, never the action
+     :check      (into {} (for [action actions] [action (or (condition-of action nil :check? true) "false")]))
      ;; each action that reads, by its sentences allowing :read here: a
      ;; marked param's row (groundwork-access.rows-of), as the read gate reads it
      :reads      (into {} (for [action actions
@@ -424,9 +430,11 @@
                   :delete (for-op :delete)}}))
 
 (defn make-sql-conditions
-  "{table-key {:actions {action sql} :reads {action sql} :operations {:read
-   sql …}}} for every table with sentences: :reads, for each action that
-   reads, its sentences allowing :read on the table."
+  "{table-key {:actions {action sql} :check {action sql} :reads {action sql}
+   :operations {:read sql …}}} for every table with sentences: :check, the
+   check's condition of a record, of the action's sentences that give the
+   action itself; :reads, for each action that reads, its sentences
+   allowing :read on the table."
   [tables scope-kinds]
   (check-sentences tables scope-kinds)
   (let [place      {:tables-by-key (into {} (map (juxt :table identity)) tables) :scope-kinds scope-kinds}

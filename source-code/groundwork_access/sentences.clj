@@ -232,6 +232,17 @@
   [table action]
   (filter #(contains? (find-allowed-actions %) action) (when (sequential? (:access table)) (:access table))))
 
+(defn gives-the-action-itself?
+  "Whether a sentence gives its action to someone for holding that action:
+   every sentence but a [:member …] (its own :to, or its :via's) that names
+   another action held there. Such a one gives rows to the holders of the
+   other action, never the action: the check and \"what may I do?\" count
+   only the sentences that give it itself
+   (decisions/2026-11-09-the-check-counts-an-action-held-only-by-the-persons-roles.md)."
+  [{:keys [to via]} action]
+  (let [who (if via (:to via) to)]
+    (not (and (vector? who) (= :member (first who)) (not= action (find-held-action who action))))))
+
 (defn is-system-sentence?
   "Whether a sentence gives its actions to a named system actor."
   [{:keys [to]}]

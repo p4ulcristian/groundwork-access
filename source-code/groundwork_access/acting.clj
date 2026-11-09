@@ -43,10 +43,21 @@
                   action (sentences/find-allowed-actions sentence)]
               [table sentence action]))))
 
+(defn is-held-by-roles?
+  "Whether the person's roles hold the action in the scope (there, or above
+   it, as list-actions-of-person folds them in): what the check asks of a
+   :scope [kind param] handler. A [:member … other-action] sentence gives
+   rows, never the action
+   (decisions/2026-11-09-the-check-counts-an-action-held-only-by-the-persons-roles.md)."
+  [action scope actions-by-scope]
+  (contains? (get actions-by-scope scope #{}) action))
+
 (defn is-held-there?
-  "Whether the action is held in the scope: by a role there (or above it,
-   as list-actions-of-person folds them in), or as the action one of its
-   [:member …] sentences on that kind needs held."
+  "Whether the scope counts for the action's rows, once the check has let
+   the handler through: the action held by a role there (or above it, as
+   list-actions-of-person folds them in), or the action one of its
+   [:member …] sentences on that kind needs held. What Postgres is told
+   (make-telling), never the check's answer (is-held-by-roles?)."
   [needs action [kind :as scope] actions-by-scope]
   (let [held (get actions-by-scope scope #{})]
     (or (contains? held action)

@@ -2,7 +2,9 @@
   "Sentences into SQL: pure, no database."
   (:require
    [clojure.test :refer [deftest is testing]]
-   [groundwork-access.api :as access]))
+   [groundwork-access.api :as access]
+   [groundwork-access.check :as check]
+   [groundwork-access.sentences :as sentences]))
 
 (def ^:private scope-kinds
   {:shop {:table   :shops
@@ -154,3 +156,26 @@
                          (catch clojure.lang.ExceptionInfo e (:problems (ex-data e))))]
     (is (= [] (problems (via [:some :agreement/accepted-at]))) "a related row that is accepted: allowed")
     (is (some #(re-find #"can't say \[:none" %) (problems (via [:none :agreement/accepted-at]))) "[:none …] there stays refused")))
+
+(deftest a-member-sentence-naming-another-action-gives-rows-not-the-action
+  ;; decisions/2026-11-09-the-check-counts-an-action-held-only-by-the-persons-roles.md
+  (testing "sentences that give the action itself"
+    (is (sentences/gives-the-action-itself? {:allow :orders/see :to [:member :order/shop-id]} :orders/see))
+    (is (sentences/gives-the-action-itself? {:allow :orders/see :to [:member :order/shop-id :orders/see]} :orders/see) "the action named as held")
+    (is (sentences/gives-the-action-itself? {:allow :orders/see :to [:member :platform]} :orders/see))
+    (is (sentences/gives-the-action-itself? {:allow :orders/see :to [:me :order/customer-id]} :orders/see))
+    (is (sentences/gives-the-action-itself? {:allow :orders/see :to :signed-in} :orders/see))
+    (is (sentences/gives-the-action-itself? {:allow :orders/see :via {:table :agreements :match {} :to [:member :agreement/partner-id]}} :orders/see)))
+  (testing "a [:member …] needing another action held: rows only"
+    (is (not (sentences/gives-the-action-itself? {:allow :orders/note :to [:member :order/shop-id :orders/edit]} :orders/note)))
+    (is (not (sentences/gives-the-action-itself? {:allow :orders/see :to [:member :platform :platform/support]} :orders/see)))
+    (is (not (sentences/gives-the-action-itself? {:allow :orders/see :via {:table :agreements :match {} :to [:member :agreement/partner-id :agreements/see]}}
+                                                 :orders/see)))))
+
+(deftest the-check-counts-open-ways-and-the-action-held-itself
+  (let [ways #{:anyone :signed-in :visitor [:holds :orders/see] [:holds :shop/access] [:system :mailer]}]
+    (is (= #{:anyone :signed-in :visitor [:holds :orders/see]} (check/find-counted-ways ways :every-scope-holding-the-action :orders/see))
+        "[:holds :shop/access], a [:member … :shop/access] sentence's way, gives rows, not orders/see")
+    (is (= #{:anyone :signed-in :visitor} (check/find-counted-ways ways :no-scope :orders/see)) "no scope: the open ways only")
+    (is (= #{} (check/find-counted-ways #{[:holds :shop/access]} :every-scope-holding-the-action :orders/note))
+        "a member whose only way is another action held there does not hold it")))

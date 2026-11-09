@@ -35,7 +35,8 @@
     :shop     {:table :shops :parent :company :single? false
                :actions {:orders/see #{:read} :orders/edit #{:read :insert :update} :orders/note #{:read :update}
                          :agreements/make #{:read :insert :update}}
-               :roles   {"Staff" #{:orders/see :orders/edit :agreements/make} "Clerk" #{:orders/see}}
+               :roles   {"Staff" #{:orders/see :orders/edit :agreements/make} "Clerk" #{:orders/see}
+                         "Noter" #{:orders/see :orders/note}}
                :denies  [{:deny :writes :session :impersonated}
                          {:deny :writes :when [:= :shop/status "suspended"]}]}
     :partner  {:table :partners :parent nil :single? false
@@ -80,6 +81,7 @@
                {:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:me :order/customer-id]}
                {:allow #{:orders/see :orders/edit} :only :all-of-the-action :to [:me :order/visitor-id]}
                {:allow :orders/note :only :all-of-the-action :to [:member :order/shop-id :orders/edit]}
+               {:allow :orders/note :only :all-of-the-action :to [:member :order/shop-id]}   ; a role holding orders/note itself
                {:allow :orders/see :only :all-of-the-action :to [:member :platform :platform/support]}
                {:allow :orders/see :only :all-of-the-action :via {:table :agreements
                                          :match {:order/shop-id :agreement/shop-id}
@@ -127,6 +129,7 @@
 (def ^:private cora (id 9)) ; a customer of shop 9
 (def ^:private eve  (id 10)) ; signed in, nowhere
 (def ^:private vic  (id 11)) ; a visitor who signs in
+(def ^:private nina (id 12)) ; Noter in shop 7: holds orders/note by her role
 
 (def ^:private order-42 (id 42))   ; shop 7
 (def ^:private order-80 (id 80))   ; shop 8
@@ -163,6 +166,8 @@
                    :steps [(answer-with #(select-keys (:groundwork-steps/message-data %) [:order/id]))]}
    :orders/all    {:action :orders/see :scope :every-scope-holding-the-action :params-shape [:map] :answer-shape [:vector :uuid] :refusals {} :rate-limit nil :run-steps-in nil
                    :steps [(answer-with #(mapv :order/id (postgres/find-rows (:groundwork-access/transaction %) find-all-orders {})))]}
+   :orders/note-in-shop {:action :orders/note :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map]
+                         :refusals {} :rate-limit nil :run-steps-in nil :steps [(answer-with (constantly {}))]}
    :orders/place  {:action :orders/edit :scope [:shop :order/shop-id] :params-shape [:map [:order/shop-id :uuid]] :answer-shape [:map] :refusals {} :rate-limit nil
                    :run-steps-in nil
                    :steps [(answer-with #(do (postgres/run-statement! (:groundwork-access/transaction %) insert-order (:groundwork-steps/message-data %)) {}))]}})
@@ -193,6 +198,7 @@
                                 (access/add-scope! transaction scope-kinds :shop shop-9 bob nil)
                                 (add-member! transaction scope-kinds [:shop shop-7] anna #{"Staff"})
                                 (add-member! transaction scope-kinds [:shop shop-7] carl #{"Clerk"})
+                                (add-member! transaction scope-kinds [:shop shop-7] nina #{"Noter"})
                                 (access/add-scope! transaction scope-kinds :partner partner-1 pia nil)
                                 (access/remove-membership! transaction [:partner partner-1] pia)
                                 (add-member! transaction scope-kinds [:partner partner-1] pia #{"Agent"})
@@ -337,9 +343,10 @@
             (is (= #{order-42} (orders-seen-by app-pool {:person-id dora})) "the gates: shop 7's only")
             (is (= #{} (orders-seen-by app-pool {:person-id eve})) "the gates: nobody's for a stranger"))
 
-          (testing "a kind of one scope: platform Support sees every order; a second platform is refused"
+          (testing "a kind of one scope: platform Support reads every order's row, but holds no orders/see; a second platform is refused"
             (let [cookie (sign-in sam #{})]
-              (is (= #{(str order-99)} (texts (ask ready cookie :orders/one {:order/id order-99}))))
+              (is (= not-allowed (ask ready cookie :orders/one {:order/id order-99}))
+                  "[:member :platform :platform/support] gives rows, not the action, at the check")
               (is (= not-found (ask ready (sign-in eve #{}) :orders/one {:order/id order-99}))))
             (is (= #{order-42 order-80 order-99 order-c order-v order-w} (orders-seen-by app-pool {:person-id sam})))
             (is (= 0 (updated-by app-pool {:person-id sam} order-99)) "the gates: Support only reads")
@@ -347,17 +354,28 @@
                                   (postgres/run-in-transaction! owner-pool {:read-only? false :log nil}
                                                               #(access/add-scope! % scope-kinds :platform (id 3004) sam nil)))))
 
-          (testing "[:member column action]: noting needs orders/edit held in the order's shop"
-            (is (= #{(str order-42)} (texts (ask ready (sign-in anna #{}) :orders/note {:order/id order-42}))))
+          (testing "[:member column action]: holding orders/edit there gives the rows of orders/note, never the action"
+            (is (= not-allowed (ask ready (sign-in anna #{}) :orders/note {:order/id order-42}))
+                "Staff holds orders/edit, not orders/note: the record check refuses")
+            (is (= not-found (ask ready (sign-in anna #{}) :orders/note-in-shop {:order/shop-id shop-7}))
+                "nor does the scope check count it")
             (is (= not-allowed (ask ready (sign-in carl #{}) :orders/note {:order/id order-42})) "a Clerk sees, can't note")
             (is (= 1 (updated-by app-pool {:person-id anna} order-42)) "the gates: Staff may update (orders/edit, orders/note)")
             (is (= 0 (updated-by app-pool {:person-id carl} order-42)) "the gates: a Clerk may not"))
 
-          (testing ":via: a partner's Agent sees a shop's orders while their agreement is active"
+          (testing "an action is held only by the person's roles: a role holding orders/note lets the check through"
+            (is (= #{(str order-42)} (texts (ask ready (sign-in nina #{}) :orders/note {:order/id order-42}))) "the record")
+            (is (= {} (ask ready (sign-in nina #{}) :orders/note-in-shop {:order/shop-id shop-7})) "the scope")
+            (is (= not-found (ask ready (sign-in nina #{}) :orders/note-in-shop {:order/shop-id shop-9})) "not in another shop")
+            (is (= not-found (ask ready (sign-in nina #{}) :orders/note {:order/id order-99})) "nor its records"))
+
+          (testing ":via: a partner's Agent reads a shop's orders' rows while their agreement is active"
             (let [cookie (sign-in pia #{})]
-              (is (= #{(str order-42)} (texts (ask ready cookie :orders/one {:order/id order-42}))))
+              (is (= not-allowed (ask ready cookie :orders/one {:order/id order-42}))
+                  "the via's [:member … :agreements/see] gives rows, not orders/see, at the check")
               (is (= not-found (ask ready cookie :orders/one {:order/id order-99})) "agreement 9 has ended")
-              (is (= #{(str order-42)} (texts (ask ready cookie :orders/all {})))))
+              (is (= #{(str order-42)} (texts (ask ready cookie :orders/all {})))
+                  "a list open to anyone signed in ([:me …]): the via's rows, by the gates"))
             (is (= #{order-42} (orders-seen-by app-pool {:person-id pia})))
             (is (= 0 (updated-by app-pool {:person-id pia} order-42)) "the gates: the via gives seeing only"))
 
@@ -410,8 +428,11 @@
                     {:scope-kind :shop :scope-id shop-7 :actions [:orders/see]}]
                    (what-may (sign-in dora #{}))) "the Director's, in the company and the shop below it")
             (is (= [{:scope-kind nil :scope-id nil :actions [:orders/edit :orders/see]}
-                    {:scope-kind :shop :scope-id shop-7 :actions [:agreements/make :orders/edit :orders/note :orders/see]}]
-                   (what-may (sign-in anna #{}))) "orders/note, which needs orders/edit there")
+                    {:scope-kind :shop :scope-id shop-7 :actions [:agreements/make :orders/edit :orders/see]}]
+                   (what-may (sign-in anna #{}))) "not orders/note: orders/edit there gives its rows, not the action")
+            (is (= [{:scope-kind nil :scope-id nil :actions [:orders/edit :orders/see]}
+                    {:scope-kind :shop :scope-id shop-7 :actions [:orders/note :orders/see]}]
+                   (what-may (sign-in nina #{}))) "orders/note, which her role holds")
             (is (= [{:scope-kind nil :scope-id nil :actions [:orders/see]}
                     {:scope-kind :shop :scope-id shop-7 :actions [:orders/see]}]
                    (what-may (sign-in anna #{:impersonated}))) "impersonated: the shop's writes are out")
@@ -419,12 +440,11 @@
                     {:scope-kind :shop :scope-id shop-8 :actions [:orders/see]}]
                    (what-may (sign-in gus #{}))) "suspended: shop 8's writes are out")
             (is (= [{:scope-kind nil :scope-id nil :actions [:orders/edit :orders/see]}
-                    {:scope-kind :partner :scope-id partner-1 :actions [:agreements/accept :agreements/see]}
-                    {:scope-kind :shop :scope-id shop-7 :actions [:orders/see]}]
-                   (what-may (sign-in pia #{}))) "the via names shop 7")
+                    {:scope-kind :partner :scope-id partner-1 :actions [:agreements/accept :agreements/see]}]
+                   (what-may (sign-in pia #{}))) "the via names shop 7, but gives its rows, not orders/see")
             (is (= [{:scope-kind nil :scope-id nil :actions [:orders/edit :orders/see]}
                     {:scope-kind :platform :scope-id platform :actions [:platform/support]}]
-                   (what-may (sign-in sam #{}))) "Support: orders/see in every scope")
+                   (what-may (sign-in sam #{}))) "Support: platform/support; the nil entry is what anyone signed in may do")
             (is (= [{:scope-kind nil :scope-id nil :actions [:orders/edit :orders/see]}] (what-may v1-cookie)) "a visitor")
             (is (= [] (what-may nil)) "nobody"))
 

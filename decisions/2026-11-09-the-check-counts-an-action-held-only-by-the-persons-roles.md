@@ -1,6 +1,6 @@
 # The check counts an action as held only by the person's roles; a sentence naming another action held gives rows, never the action
 
-> The user's decision, 2026-11-09 (Iron Rainbow's review: a Viewer passed the check of 54 of its 81 shop actions, `:orders/edit` among them, because an open sentence gave every member rows of related tables as those actions). Not released. Changes in part [[:member …] names a column or a kind of one scope, and may name the action held there](2026-10-23-a-member-sentence-names-a-column-or-a-kind-of-one-scope-and-what-is-held-there.md), [access, piece 3: the check](2026-10-22-access-piece-3-the-check.md) and ["What may I do?" is a handler for the browser](2026-10-23-what-may-i-do-is-a-handler-for-the-browser.md).
+> The user's decision, 2026-11-09 (Iron Rainbow's review: a Viewer passed the check of 54 of its 81 shop actions, `:orders/edit` among them, because an open sentence gave every member rows of related tables as those actions). v0.8.8. Changes in part [[:member …] names a column or a kind of one scope, and may name the action held there](2026-10-23-a-member-sentence-names-a-column-or-a-kind-of-one-scope-and-what-is-held-there.md), [access, piece 3: the check](2026-10-22-access-piece-3-the-check.md) and ["What may I do?" is a handler for the browser](2026-10-23-what-may-i-do-is-a-handler-for-the-browser.md).
 
 **Decision:** the check in front of a handler, and "what may I do?", count an action as held only by the person's roles (a role of the scope, or above it; a small role of one action is a role):
 

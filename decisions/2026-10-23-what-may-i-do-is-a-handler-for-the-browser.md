@@ -1,4 +1,4 @@
-> **Changed in part** by [The check counts an action as held only by the person's roles](2026-11-09-the-check-counts-an-action-held-only-by-the-persons-roles.md) (2026-11-09, not released): no action is listed where only another action is held, and a via's scopes only when it needs the action itself.
+> **Changed in part** by [The check counts an action as held only by the person's roles](2026-11-09-the-check-counts-an-action-held-only-by-the-persons-roles.md) (2026-11-09, v0.8.8): no action is listed where only another action is held, and a via's scopes only when it needs the action itself.
 
 > **Changed in part** by [The session is looked up in the question's own transaction](2026-10-27-the-session-is-looked-up-in-the-questions-own-transaction.md) (2026-10-27, v0.8.0): the find-session step runs in the handler's transaction, opened read-write; its step makes it read-only before it reads.
 

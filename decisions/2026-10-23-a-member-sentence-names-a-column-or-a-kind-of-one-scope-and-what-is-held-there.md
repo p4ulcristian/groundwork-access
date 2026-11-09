@@ -1,6 +1,6 @@
 # [:member …] names a column or a kind of one scope, and may name the action held there
 
-> **Changed in part** by [The check counts an action as held only by the person's roles](2026-11-09-the-check-counts-an-action-held-only-by-the-persons-roles.md) (2026-11-09, not released): a `[:member … action]` naming another action than the sentence's gives rows only: the check and "what may I do?" no longer count it.
+> **Changed in part** by [The check counts an action as held only by the person's roles](2026-11-09-the-check-counts-an-action-held-only-by-the-persons-roles.md) (2026-11-09, v0.8.8): a `[:member … action]` naming another action than the sentence's gives rows only: the check and "what may I do?" no longer count it.
 
 > **Changed in part** by [A handler says where it acts, and Postgres hears only that](2026-10-23-a-handler-says-where-it-acts-and-postgres-hears-only-that.md) (2026-10-23, built on tidy-up, not released): on a scope kind's own table, `[:member <its primary key>]` names the row itself, the scope (`[:member :shop/id]` on `shops`); it was refused, "names no scope".
 

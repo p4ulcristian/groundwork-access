@@ -81,7 +81,7 @@
                                 :let [kind (sentences/find-kind-named-by-column table mine tables-by-key scope-kinds)]
                                 :when kind]
                             {:action action :kind kind :function (sentences/find-via-function-name via tables-by-key)
-                             :out (str "via_" (inc i))}))
+                             :out (str "via_" (inc i)) :table (:table via)}))
      :held-anywhere (distinct (for [[table {:keys [to via]} action] sentences
                                     :let [to (if via (:to via) to)]
                                     :when (and (vector? to) (= :member (first to))
@@ -90,17 +90,42 @@
                                                                       (keys (:match via))))))]
                                 {:action action :needed (sentences/find-held-action to action)}))}))
 
-(defn- find-via-scopes [transaction {:keys [function out]}]
-  (map :scope/id (postgres/find-rows transaction (postgres/make-query-from-sql-text
-                                                (str "the scopes " function " names")
-                                                (str "SELECT DISTINCT " out " AS scope__id FROM " function "()"))
-                                   {})))
+(defn- name-table-read
+  "The line naming the table a function reads: the function hides it from
+   Postgres's planner, so the answer's live-update notes name it by this
+   line (groundwork-postgres's \"-- reads:\")."
+  [table-key]
+  (str "-- reads: " (subs (str table-key) 1) "\n"))
 
-(defn- find-denied-scopes [transaction deny]
-  (set (map :scope/id (postgres/find-rows transaction (postgres/make-query-from-sql-text
-                                                     "the scopes in a denied state"
-                                                     (str "SELECT " (conditions/find-denied-function-name deny) "() AS scope__id"))
-                                        {}))))
+(defn- make-via-reads
+  "One query per via function and column, made once with the handler
+   (groundwork-postgres asks the planner once per query made), each with
+   what its scopes give: [{:query … :gives [[kind action] …]}]. Many
+   actions, and many sentences, share one via's function."
+  [via-scope]
+  (for [[[function out table] vias] (group-by (juxt :function :out :table) via-scope)]
+    {:query (postgres/make-query-from-sql-text
+             (str "the scopes " function " names")
+             (str (name-table-read table) "SELECT DISTINCT " out " AS scope__id FROM " function "()"))
+     :gives (distinct (map (juxt :kind :action) vias))}))
+
+(defn- make-denied-read
+  "A scope-state deny's query, made once with the handler; its function
+   reads the kind's table."
+  [scope-kinds {:keys [kind] :as deny}]
+  [deny (postgres/make-query-from-sql-text
+         "the scopes in a denied state"
+         (str (name-table-read (get-in scope-kinds [kind :table]))
+              "SELECT " (conditions/find-denied-function-name deny) "() AS scope__id"))])
+
+(defn- add-via-scopes [transaction by-scope {:keys [query gives]}]
+  (let [ids (map :scope/id (postgres/find-rows transaction query {}))]
+    (reduce (fn [by-scope [kind action]]
+              (reduce #(update %1 [kind %2] (fnil conj #{}) action) by-scope ids))
+            by-scope gives)))
+
+(defn- find-denied-scopes [transaction query]
+  (set (map :scope/id (postgres/find-rows transaction query {}))))
 
 (defn- take-out-denied [actions-by-scope everywhere scope-kinds session-flags denied-by-state]
   (let [flagged   (set (for [deny (scope-kinds/find-denies scope-kinds)
@@ -119,25 +144,21 @@
 
 (defn- make-answer-step [tables scope-kinds]
   (let [{:keys [open via-scope held-anywhere]} (find-plan tables scope-kinds)
-        state-denies (filter :when (scope-kinds/find-denies scope-kinds))]
+        via-reads    (vec (make-via-reads via-scope))
+        denied-reads (mapv #(make-denied-read scope-kinds %) (filter :when (scope-kinds/find-denies scope-kinds)))]
     {:name  :groundwork-access/answer-my-actions
      :enter (fn [{:groundwork-access/keys [person-id visitor-id session-flags transaction] :as context}]
               (let [held     (asking/set-asking-with-every-action! transaction scope-kinds
                                                                        {:person-id person-id :visitor-id visitor-id :session-flags session-flags}
                                                                        true)   ; read-only from here on
-                    by-scope (-> held
-                                 (as-> by-scope
-                                       (reduce (fn [by-scope {:keys [action kind] :as via}]
-                                                 (reduce #(update %1 [kind %2] (fnil conj #{}) action)
-                                                         by-scope (find-via-scopes transaction via)))
-                                               by-scope via-scope)))
+                    by-scope (reduce #(add-via-scopes transaction %1 %2) held via-reads)
                     open-now (cond-> (:anyone open)
                                person-id                        (into (:signed-in open))
                                (and (nil? person-id) visitor-id) (into (:visitor open))
                                true                             (into (for [{:keys [action needed]} held-anywhere
                                                                             :when (holds-anywhere? held needed)]
                                                                         action)))
-                    denied   (for [deny state-denies] [deny (find-denied-scopes transaction deny)])
+                    denied   (for [[deny query] denied-reads] [deny (find-denied-scopes transaction query)])
                     [by-scope open-now] (take-out-denied by-scope open-now scope-kinds session-flags denied)]
                 (steps/add-answer-to-context context (make-answer by-scope open-now))))}))
 

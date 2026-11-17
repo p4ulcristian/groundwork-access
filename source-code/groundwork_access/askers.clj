@@ -33,7 +33,9 @@
    [groundwork-access.settings :as settings]
    [groundwork-access.tokens :as tokens]
    [groundwork-logs.api :as logs]
-   [groundwork-steps.api :as steps]))
+   [groundwork-steps.api :as steps])
+  (:import
+   (java.util UUID)))
 
 (def ^:private nobody {:person-id nil :visitor-id nil :session-flags #{}})
 
@@ -170,6 +172,34 @@
                                 (let [{:keys [asker token-id outside-issuer]} (find-asker-or-throw transaction request settings)]
                                   (asking/set-asking-with-every-action! transaction scope-kinds asker read-only?)
                                   (f transaction (assoc asker :token-id token-id :outside-issuer outside-issuer))))))
+
+(def ^:private has-an-asker
+  {:type :groundwork-access/request-has-asker
+   :because "A new visitor is made only for a request with no asker: no person, no visitor, no token."})
+
+(defn- has-asker? [{:keys [asker token-id outside-issuer]}]
+  (boolean (or (:person-id asker) (:visitor-id asker) token-id outside-issuer)))
+
+(defn run-as-new-visitor!
+  "Runs (f transaction visitor-id) in one transaction of its own, read-write,
+   as a visitor made for it: a fresh id, made here, which no session holds.
+   Only for a request groundwork-access finds no asker in (no person, no
+   visitor session, no token), found as run-as-asker-of-request! finds one,
+   its first statement; a request with an asker throws
+   :groundwork-access/request-has-asker, so nobody poses as a visitor, and a
+   refused request throws as there. A transaction handed in is refused."
+  [pool request {:keys [settings log]} f]
+  (when (postgres/is-transaction? pool)
+    (throw (ex-info "run-as-new-visitor! runs in a transaction of its own: hand it the pool"
+                    {:type :groundwork-access/asker-in-a-transaction})))
+  (postgres/run-in-transaction! pool {:read-only? false :log log}
+                                (fn [transaction]
+                                  (when (has-asker? (find-asker-or-throw transaction request settings))
+                                    (throw (ex-info (:because has-an-asker) has-an-asker)))
+                                  (let [visitor-id (UUID/randomUUID)]
+                                    (asking/set-asking! transaction {:person-id nil :visitor-id visitor-id :session-flags #{}}
+                                                        {:acting :every-action :holding {}})
+                                    (f transaction visitor-id)))))
 
 (defn make-token! [pool request {:keys [settings] :as options}]
   (let [{{:keys [person-id session-flags]} :asker :keys [token-id outside-issuer]} (find-asker-or-throw pool request settings)]

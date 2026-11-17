@@ -41,7 +41,7 @@
   "What the tests declare to groundwork-postgres beside the tables: groundwork-access's own
    functions, no extensions or views."
   [tables]
-  {:tables tables :extensions [] :functions access/function-files :views []})
+  {:tables tables :extensions [] :provider-extensions [] :functions access/function-files :views []})
 
 (defn declare-tables-and-access
   "What the tests declare to groundwork-postgres beside the tables, for tables with
@@ -50,6 +50,7 @@
   [ready-tables tables scope-kinds]
   {:tables     ready-tables
    :extensions []
+   :provider-extensions []
    :functions  (into access/function-files (access/make-access-functions tables scope-kinds))
    :views      []})
 

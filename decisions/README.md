@@ -21,6 +21,7 @@ The ones dated before 2026-10-22, sessions v1 and the five access pieces were ma
 - [An outside issuer's token is checked by nimbus-jose-jwt; the policy stays groundwork-access's](2026-10-27-an-outside-issuers-token-is-checked-by-nimbus-jose-jwt.md) (v0.8.1)
 - [The session cookie is read by RFC 6265's grammar](2026-10-27-the-session-cookie-is-read-by-rfc-6265s-grammar.md) (v0.8.2)
 - [run-as-asker-of-request! hands f the asker it found](2026-10-27-run-as-asker-of-request-hands-f-the-asker-it-found.md) (v0.8.3)
+- [A request with no asker may run one transaction as a new visitor, whose id groundwork-access makes](2026-11-17-a-request-with-no-asker-may-run-as-a-new-visitor.md) (v0.8.10)
 
 ## What may they do
 

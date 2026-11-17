@@ -911,6 +911,33 @@
   [pool request options f]
   (askers/run-as-asker-of-request! pool request (settings/check-asker-run-options options) f))
 
+(defn run-as-new-visitor!
+  "Runs (f transaction visitor-id) in one transaction of its own, read-write,
+   as a visitor groundwork-access makes for it: a fresh id, made here and
+   handed to f, which no session holds. For a request with no asker that
+   keeps something a visitor's rows hold (an upload in another site's
+   frame, which keeps no cookie, so no visitor session can start there):
+   the rows f writes name visitor-id, and the gates hold them as that
+   visitor's. The app carries the id on itself (a signed claim) to whoever
+   takes the rows over. The id is made here, never taken: a caller can't
+   act as a visitor someone else is.
+
+   Only for a request groundwork-access finds no asker in, by
+   run-as-asker-of-request!'s rules (its token, else its cookie and the
+   Origin): one with a person, a visitor session or a token throws
+   :groundwork-access/request-has-asker; one the step refuses throws
+   :groundwork-access/refused-request, with its :reason. options, every
+   key required: {:settings settings :log log} (:log the caller's, which
+   the transaction carries for groundwork-postgres's run-after-commit!, or nil for
+   one that keeps no work). A transaction handed in is refused.
+
+     (access/run-as-new-visitor! pool request {:settings settings :log log}
+                                 (fn [transaction visitor-id]
+                                   (postgres/run-statement! transaction insert-upload {:upload/visitor-id visitor-id})
+                                   visitor-id))"
+  [pool request options f]
+  (askers/run-as-new-visitor! pool request (settings/check-new-visitor-run-options options) f))
+
 (defn find-system-leaks
   "The leak test of a named system actor, for an app's own test suite:
    foreign-ids, {:orders [id …]}, rows its sentences don't give it; each

@@ -8,7 +8,7 @@
 (deftest the-api-names
   (is (= '#{;; who is asking
            settings-shape sessions-table outside-subjects-table sign-in! start-visitor-session! sign-out! sign-out-everywhere! delete-ended-sessions!
-           find-session-key-of-request make-find-session-step run-as-asker-of-request!
+           find-session-key-of-request make-find-session-step run-as-asker-of-request! run-as-new-visitor!
            tokens-table make-token! list-tokens revoke-token! delete-ended-tokens!
            ;; what may they do
            access-tables access-move-from-v0-7 check-scope-kinds does-action-only-read? add-scope!

@@ -204,6 +204,17 @@
    [:scope-kinds map?]
    [:log [:maybe [fn? {:error/message "should be the caller's log function, made by groundwork-logs, or nil"}]]]])
 
+(def new-visitor-run-options-shape
+  "run-as-new-visitor!'s options, every key required.
+   :settings: the settings (settings-shape): the cookie's name, the
+   allowed origin, by which the request is found to have no asker.
+   :log: the caller's log (the request's, with its request id), which the
+   transaction carries: work groundwork-postgres's run-after-commit! keeps on it that
+   throws is written there; nil for a transaction that keeps none (groundwork-postgres's)."
+  [:map {:closed true}
+   [:settings map?]
+   [:log [:maybe [fn? {:error/message "should be the caller's log function, made by groundwork-logs, or nil"}]]]])
+
 (def token-options-shape
   "make-token!'s options, every key required.
    :settings: the settings (settings-shape): the lead, the shown
@@ -306,6 +317,14 @@
    every problem at once."
   [options]
   (check-data-for-shape "The options" :groundwork-access/bad-options asker-run-options-shape options)
+  (check-settings (:settings options))
+  options)
+
+(defn check-new-visitor-run-options
+  "Returns the options, the settings in them checked too; throws with
+   every problem at once."
+  [options]
+  (check-data-for-shape "The options" :groundwork-access/bad-options new-visitor-run-options-shape options)
   (check-settings (:settings options))
   options)
 

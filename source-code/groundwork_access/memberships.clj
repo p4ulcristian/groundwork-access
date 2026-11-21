@@ -9,7 +9,8 @@
   (:require
    [clojure.string]
    [groundwork-postgres.api :as postgres]
-   [groundwork-access.scope-kinds :as scope-kinds]))
+   [groundwork-access.scope-kinds :as scope-kinds]
+   [jsonista.core :as json]))
 
 (defn- make-query [file-name]
   (postgres/make-query-from-sql-file (str "groundwork_access/" file-name)))
@@ -19,7 +20,7 @@
 (def ^:private lock-scope-kind               (make-query "lock_scope_kind.sql"))
 (def ^:private count-scopes-of-kind          (make-query "count_scopes_of_kind.sql"))
 (def ^:private insert-role                   (make-query "insert_role.sql"))
-(def ^:private insert-role-action            (make-query "insert_role_action.sql"))
+(def ^:private insert-role-actions           (make-query "insert_role_actions.sql"))
 (def ^:private find-role                     (make-query "find_role.sql"))
 (def ^:private find-role-by-name             (make-query "find_role_by_name.sql"))
 (def ^:private lock-roles-of-scope           (make-query "lock_roles_of_scope.sql"))
@@ -91,11 +92,18 @@
     (refuse (str "\"Owner\" is groundwork-access's own role, holding every action: it can't be " what)
             {:type :groundwork-access/owner-role :role-id id})))
 
+(defn- insert-role-actions!
+  "The role's actions as rows, all in one statement; none for no actions."
+  [transaction role-id actions]
+  (when (seq actions)
+    (postgres/run-statement! transaction insert-role-actions
+                             {:role-action/role-id role-id
+                              :role-action/actions (json/write-value-as-string (map turn-keyword-into-text actions))})))
+
 (defn- insert-role! [transaction [kind scope-id] role-name actions]
   (let [role-id (random-uuid)]
     (postgres/run-statement! transaction insert-role {:role/id role-id :role/scope-kind (name kind) :role/scope-id scope-id :role/name role-name})
-    (doseq [action actions]
-      (postgres/run-statement! transaction insert-role-action {:role-action/role-id role-id :role-action/action (turn-keyword-into-text action)}))
+    (insert-role-actions! transaction role-id actions)
     role-id))
 
 (defn add-role! [transaction scope-kinds [kind :as scope] role-name actions]
@@ -119,8 +127,7 @@
   (check-actions! scope-kinds kind actions)
   (refuse-owner! (find-role-of-scope! transaction scope role-id) "given other actions")
   (postgres/run-statement! transaction delete-role-actions {:role-action/role-id role-id})
-  (doseq [action actions]
-    (postgres/run-statement! transaction insert-role-action {:role-action/role-id role-id :role-action/action (turn-keyword-into-text action)}))
+  (insert-role-actions! transaction role-id actions)
   nil)
 
 (defn remove-role! [transaction scope role-id]

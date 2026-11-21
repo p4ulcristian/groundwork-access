@@ -179,3 +179,13 @@
     (is (= #{:anyone :signed-in :visitor} (check/find-counted-ways ways :no-scope :orders/see)) "no scope: the open ways only")
     (is (= #{} (check/find-counted-ways #{[:holds :shop/access]} :every-scope-holding-the-action :orders/note))
         "a member whose only way is another action held there does not hold it")))
+
+(deftest a-column-names-the-kind-whose-table-it-references
+  (let [tables {:shops shops :orders orders}]
+    (is (= :shop (sentences/find-kind-named-by-column orders :order/shop-id tables scope-kinds)))
+    (is (nil? (sentences/find-kind-named-by-column orders :order/customer-id tables scope-kinds)) "no reference")
+    (is (nil? (sentences/find-kind-named-by-column orders :order/shop-id {:orders orders} scope-kinds))
+        "a reference to no table it is given")
+    (testing "asked again with other tables, it answers for those"
+      (is (nil? (sentences/find-kind-named-by-column orders :order/shop-id tables {:company {:table :companies}})))
+      (is (= :shop (sentences/find-kind-named-by-column orders :order/shop-id tables scope-kinds))))))

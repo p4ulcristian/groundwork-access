@@ -86,18 +86,45 @@
 (defn find-column-type [{:keys [columns]} column-key]
   (some (fn [[k type]] (when (= k column-key) type)) columns))
 
+(defn- remember-last
+  "(build x), made again only when called with another x than last time
+   (identical?, not =): a start asks with the same tables thousands of times."
+  [build]
+  (let [last-made (atom nil)]
+    (fn [x]
+      (let [[last-x made] @last-made]
+        (if (identical? last-x x)
+          made
+          (let [made (build x)]
+            (reset! last-made [x made])
+            made))))))
+
+(def ^:private find-table-of-primary-key
+  "{primary-key column -> the first table (in tables-by-key's order) it is a
+   primary key column of}."
+  (remember-last
+   (fn [tables-by-key]
+     (reduce (fn [found [table-key {table-columns :columns}]]
+               (reduce (fn [found [k _ options]]
+                         (if (and (:primary-key? options) (not (contains? found k))) (assoc found k table-key) found))
+                       found table-columns))
+             {} tables-by-key))))
+
+(def ^:private find-kind-of-table
+  "{table -> the first scope kind (in scope-kinds' order) whose :table it is}."
+  (remember-last
+   (fn [scope-kinds]
+     (reduce (fn [found [kind {:keys [table]}]] (if (contains? found table) found (assoc found table kind)))
+             {} scope-kinds))))
+
 (defn find-kind-named-by-column
   "The scope kind a column names, the kind whose :table its reference
    points at (that table's primary key), or nil."
   [{:keys [columns]} column-key tables-by-key scope-kinds]
   (let [references (some (fn [[k _ options]] (when (= k column-key) (get-in options [:references :to]))) columns)
-        target     (when references
-                     (some (fn [[table-key {table-columns :columns}]]
-                             (when (some (fn [[k _ options]] (and (= k references) (:primary-key? options))) table-columns)
-                               table-key))
-                           tables-by-key))]
+        target     (when references (get (find-table-of-primary-key tables-by-key) references))]
     (when target
-      (some (fn [[kind {:keys [table]}]] (when (= table target) kind)) scope-kinds))))
+      (get (find-kind-of-table scope-kinds) target))))
 
 (defn find-kind-of-own-row
   "The scope kind whose :table this table is, when the column is its
